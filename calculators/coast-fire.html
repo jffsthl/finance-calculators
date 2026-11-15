@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Coast FIRE Calculator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="shared.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+.err{grid-column:1/-1;color:var(--bad);font-size:12.5px;margin:0}
+.in.bad{border-color:var(--bad)}
+.errbox{border:1px solid var(--bad);border-radius:10px;padding:14px 16px;background:var(--surface);color:var(--bad);font-size:14px}
+.errbox ul{margin:6px 0 0;padding-left:20px}
+.headline{grid-column:1/-1}
+.headline .v{font-size:32px}
+.how p{margin:0 0 8px;font-size:13.5px;color:var(--ink-2);max-width:78ch}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Coast FIRE</h1>
+    <p>Find the monthly amount to invest until your coast age so that growth alone carries you to your FIRE number by retirement. After that, you only need to cover your expenses.</p>
+  </header>
+
+  <div class="layout">
+    <aside aria-label="Inputs">
+      <fieldset>
+        <legend>Money</legend>
+        <div class="f full"><label for="pv">Current investments</label><div class="in"><span>$</span><input id="pv" type="number" min="0" step="1000" value="50000"></div></div>
+        <div class="f full"><label for="col">Annual cost of living (today's $)</label><div class="in"><span>$</span><input id="col" type="number" min="0" step="1000" value="60000"></div></div>
+        <div class="f"><label for="swr">Safe withdrawal rate</label><div class="in"><input id="swr" type="number" min="0.1" max="20" step="0.1" value="4"><span>%</span></div></div>
+        <div class="f"><label for="infl">Inflation</label><div class="in"><input id="infl" type="number" min="0" max="20" step="0.25" value="3"><span>%</span></div></div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Returns (nominal, annual)</legend>
+        <div class="f"><label for="rpre">Until coast age</label><div class="in"><input id="rpre" type="number" min="-10" max="30" step="0.25" value="7"><span>%</span></div></div>
+        <div class="f"><label for="rpost">Coast to retirement</label><div class="in"><input id="rpost" type="number" min="-10" max="30" step="0.25" value="" placeholder="same"><span>%</span></div></div>
+        <p class="hint">Leave the second box empty to use the same return in both phases.</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Ages</legend>
+        <div class="f"><label for="age">Current</label><div class="in"><input id="age" type="number" min="16" max="99" step="1" value="30"><span>yrs</span></div></div>
+        <div class="f"><label for="coast">Coast</label><div class="in"><input id="coast" type="number" min="16" max="100" step="1" value="45"><span>yrs</span></div></div>
+        <div class="f"><label for="ret">Retire</label><div class="in"><input id="ret" type="number" min="17" max="100" step="1" value="65"><span>yrs</span></div></div>
+        <p class="hint">You save until the coast age, then stop contributing and let it grow.</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Display amounts in</legend>
+        <div class="seg" role="group" aria-label="Dollar basis">
+          <button type="button" id="bNom" aria-pressed="false">Future dollars</button>
+          <button type="button" id="bReal" aria-pressed="true">Today's dollars</button>
+        </div>
+      </fieldset>
+
+      <button type="button" class="reset" id="reset">Reset to defaults</button>
+    </aside>
+
+    <main aria-live="polite">
+      <div id="errs"></div>
+      <section class="stats" id="stats" aria-label="Summary"></section>
+      <section class="panel" id="chartPanel">
+        <h2>Balance by age</h2>
+        <p class="sub" id="chartSub"></p>
+        <div class="chart"><canvas id="c1" role="img" aria-label="Line chart of projected balance by age versus the FIRE target path"></canvas></div>
+      </section>
+
+      <section class="panel" id="tblPanel">
+        <details>
+          <summary>Year-by-year table</summary>
+          <p class="sub" id="tblSub" style="margin-top:8px"></p>
+          <div class="tbl"><table id="tbl"></table></div>
+        </details>
+      </section>
+
+      <section class="panel how">
+        <h2>How this works</h2>
+        <p>Your <b>FIRE number</b> is your annual cost of living, inflated to your retirement age, divided by the safe withdrawal rate. The <b>coast number</b> is the balance you need at your coast age so that, growing with no further contributions, it reaches the FIRE number at retirement.</p>
+        <p>The monthly rate is the effective-annual conversion (1 + annual)<sup>1/12</sup> &minus; 1. Contributions are made at the end of each month until the coast age. Today's-dollar figures divide by inflation from today.</p>
+        <p class="note">For education only, not financial, tax or investment advice. Real returns and inflation vary, and the order of returns matters. Taxes, fees and Social Security are not included.</p>
+      </section>
+    </main>
+  </div>
+</div>
+
+<script>
+/* ---------- pure math ---------- */
+window.coastValidate = function (x) {
+  const e = {};
+  const fin = v => typeof v === "number" && isFinite(v);
+  const int = v => fin(v) && Math.abs(v - Math.round(v)) < 1e-9;
+  if (!fin(x.pv) || x.pv < 0) e.pv = "Enter an amount of $0 or more.";
+  if (!fin(x.col) || x.col < 0) e.col = "Enter an amount of $0 or more.";
+  if (!fin(x.swr) || x.swr <= 0) e.swr = "Must be greater than 0%.";
+  else if (x.swr > 20) e.swr = "Use 20% or less.";
+  if (!fin(x.infl) || x.infl < 0 || x.infl > 20) e.infl = "Enter 0% to 20%.";
+  if (!fin(x.rpre) || x.rpre < -10 || x.rpre > 30) e.rpre = "Enter -10% to 30%.";
+  if (!fin(x.rpost) || x.rpost < -10 || x.rpost > 30) e.rpost = "Enter -10% to 30%.";
+  if (!int(x.age) || x.age < 16 || x.age > 99) e.age = "Enter a whole age from 16 to 99.";
+  if (!int(x.coast) || x.coast < 16 || x.coast > 100) e.coast = "Enter a whole age from 16 to 100.";
+  if (!int(x.ret) || x.ret < 17 || x.ret > 100) e.ret = "Enter a whole age from 17 to 100.";
+  if (!e.age && !e.coast && x.coast < x.age) e.coast = "Coast age must be at least your current age.";
+  if (!e.coast && !e.ret && x.ret < x.coast) e.ret = "Retirement age must be at or after the coast age.";
+  if (!e.age && !e.ret && !e.coast && x.ret <= x.age) e.ret = "Retirement age must be after your current age.";
+  return e;
+};
+
+/* inputs: {pv, col, infl, rpre, rpost, swr, age, coast, ret}; rates in percent */
+window.coastCalc = function (x) {
+  const errors = window.coastValidate(x);
+  if (Object.keys(errors).length) return { errors };
+  const infl = x.infl / 100, swr = x.swr / 100;
+  const iPre = Math.pow(1 + x.rpre / 100, 1 / 12) - 1;
+  const iPost = Math.pow(1 + x.rpost / 100, 1 / 12) - 1;
+  const n = (x.coast - x.age) * 12, M = (x.ret - x.age) * 12;
+  const fireNominal = x.col * Math.pow(1 + infl, x.ret - x.age) / swr;
+  const fireReal = x.col / swr;
+  const coastNumber = fireNominal / Math.pow(1 + iPost, (x.ret - x.coast) * 12);
+  // balance needed at month m (from today) to reach FIRE with no more contributions
+  const need = m => fireNominal / (Math.pow(1 + iPre, Math.max(n - m, 0)) * Math.pow(1 + iPost, M - Math.max(m, n)));
+
+  let pmt = 0, shortfall = 0;
+  const noContribPhase = n === 0;
+  if (noContribPhase) {
+    shortfall = Math.max(coastNumber - x.pv, 0);
+  } else {
+    const g = Math.pow(1 + iPre, n);
+    pmt = iPre === 0 ? (coastNumber - x.pv) / n : (coastNumber - x.pv * g) * iPre / (g - 1);
+  }
+  const alreadyCoasting = noContribPhase ? x.pv >= coastNumber : pmt <= 0;
+  if (alreadyCoasting) pmt = 0;
+
+  // earliest age at which current investments alone (no contributions) reach the coast target
+  let coastAgeReached = null;
+  if (alreadyCoasting) {
+    let b = x.pv;
+    for (let m = 0; m <= M; m++) {
+      if (m > 0) b *= 1 + (m <= n ? iPre : iPost);
+      if (b >= need(m) * (1 - 1e-12)) { coastAgeReached = x.age + m / 12; break; }
+    }
+  }
+
+  const rows = [];
+  let bal = x.pv, contribTotal = 0, contribTotalReal = 0;
+  const start = { age: x.age, balance: x.pv, target: need(0) };
+  for (let y = 1; y <= x.ret - x.age; y++) {
+    const open = bal; let c = 0, cReal = 0;
+    for (let k = 1; k <= 12; k++) {
+      const m = (y - 1) * 12 + k;
+      bal *= 1 + (m <= n ? iPre : iPost);
+      if (m <= n && pmt > 0) { bal += pmt; c += pmt; cReal += pmt / Math.pow(1 + infl, m / 12); }
+    }
+    contribTotal += c; contribTotalReal += cReal;
+    const defl = Math.pow(1 + infl, y), deflOpen = Math.pow(1 + infl, y - 1);
+    rows.push({
+      age: x.age + y, contributions: c, growth: bal - open - c, balance: bal, target: need(y * 12),
+      contributionsReal: cReal, growthReal: bal / defl - open / deflOpen - cReal,
+      balanceReal: bal / defl, targetReal: need(y * 12) / defl, coastRow: x.age + y === x.coast
+    });
+  }
+  return {
+    errors: null, fireNominal, fireReal, coastNumber, coastNumberReal: coastNumber / Math.pow(1 + infl, x.coast - x.age),
+    pmt, alreadyCoasting, noContribPhase, shortfall, coastAgeReached,
+    totalContributed: contribTotal, totalContributedReal: contribTotalReal,
+    finalBalance: bal, finalBalanceReal: bal / Math.pow(1 + infl, x.ret - x.age),
+    start, rows
+  };
+};
+
+/* ---------- UI ---------- */
+const $ = id => document.getElementById(id);
+const usd = (v, d = 0) => (v < 0 ? "-" : "") + "$" + Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+const usdK = v => Math.abs(v) >= 1e6 ? "$" + (v / 1e6).toFixed(Math.abs(v) >= 1e7 ? 0 : 1) + "M" : Math.abs(v) >= 1000 ? "$" + Math.round(v / 1000) + "k" : "$" + Math.round(v);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const FIELDS = ["pv", "col", "swr", "infl", "rpre", "rpost", "age", "coast", "ret"];
+const DEFAULTS = Object.fromEntries(FIELDS.map(k => [k, $(k).value]));
+const KEY = "calc-coast-fire";
+let real = true;
+
+function setBasis(r) { real = r; $("bReal").setAttribute("aria-pressed", r); $("bNom").setAttribute("aria-pressed", !r); }
+$("bNom").onclick = () => { setBasis(false); run(); };
+$("bReal").onclick = () => { setBasis(true); run(); };
+FIELDS.forEach(k => $(k).addEventListener("input", run));
+$("reset").onclick = () => { FIELDS.forEach(k => $(k).value = DEFAULTS[k]); setBasis(true); run(); };
+try {
+  const s = JSON.parse(localStorage.getItem(KEY) || "null");
+  if (s) { FIELDS.forEach(k => { if (s[k] != null) $(k).value = s[k]; }); if (s.real != null) setBasis(!!s.real); }
+} catch (e) {}
+
+function read() {
+  const x = {};
+  FIELDS.forEach(k => x[k] = $(k).value.trim() === "" ? NaN : Number($(k).value));
+  if ($("rpost").value.trim() === "") x.rpost = x.rpre;
+  return x;
+}
+
+function showErrors(e) {
+  document.querySelectorAll(".err").forEach(n => n.remove());
+  document.querySelectorAll(".in.bad").forEach(n => n.classList.remove("bad"));
+  FIELDS.forEach(k => {
+    $(k).removeAttribute("aria-invalid"); $(k).removeAttribute("aria-describedby");
+    if (e && e[k]) {
+      $(k).setAttribute("aria-invalid", "true");
+      const box = $(k).closest(".in"); box.classList.add("bad");
+      const p = document.createElement("p"); p.className = "err"; p.textContent = e[k]; p.id = "err-" + k;
+      $(k).setAttribute("aria-describedby", p.id);
+      box.parentElement.appendChild(p);
+    }
+  });
+}
+
+function run() {
+  const x = read();
+  const r = window.coastCalc(x);
+  try { localStorage.setItem(KEY, JSON.stringify({ ...Object.fromEntries(FIELDS.map(k => [k, $(k).value])), real })); } catch (e) {}
+  if (r.errors) {
+    showErrors(r.errors);
+    $("errs").innerHTML = '<div class="errbox" role="alert">Fix these inputs to see results:<ul>' + Object.values(r.errors).map(m => "<li>" + m + "</li>").join("") + "</ul></div>";
+    ["stats", "chartPanel", "tblPanel"].forEach(i => $(i).hidden = true);
+    return;
+  }
+  showErrors(null);
+  $("errs").innerHTML = "";
+  ["stats", "chartPanel", "tblPanel"].forEach(i => $(i).hidden = false);
+
+  const basis = real ? "today's dollars" : "future (nominal) dollars";
+  const tag = real ? "today's $" : "future $";
+  const fire = real ? r.fireReal : r.fireNominal;
+  const fireOther = real ? r.fireNominal : r.fireReal;
+  const coastNum = real ? r.coastNumberReal : r.coastNumber;
+  const contrib = real ? r.totalContributedReal : r.totalContributed;
+  const finalBal = real ? r.finalBalanceReal : r.finalBalance;
+
+  let head;
+  if (r.alreadyCoasting) {
+    const reach = r.coastAgeReached;
+    let txt;
+    if (reach == null) txt = " Your current investments alone don't reach the target before retirement age.";
+    else if (reach <= x.age + 1e-9) txt = " Your current investments already meet the coast target today.";
+    else txt = " Your current investments alone reach coast status at about age " + reach.toFixed(1) + ".";
+    head = `<div class="stat headline"><span class="k">Monthly investment needed</span><span class="v">$0</span><span class="d"><b class="good">You're already coasting.</b>${txt}</span></div>`;
+  } else if (r.noContribPhase) {
+    head = `<div class="stat headline"><span class="k">Needed today</span><span class="v">${usd(r.shortfall)}</span><span class="d">Coast age equals your current age, so there's no saving period. You'd need this much more invested now (${tag}) to coast.</span></div>`;
+  } else {
+    head = `<div class="stat headline"><span class="k">Monthly investment needed</span><span class="v">${usd(r.pmt)}</span><span class="d">Level amount at the end of each month for ${x.coast - x.age} years (until age ${x.coast}), then stop. It's the same fixed dollar amount in both display modes, so it buys less each year.</span></div>`;
+  }
+  $("stats").innerHTML = head + [
+    ["FIRE number", usd(fire), `${tag} at age ${x.ret}; ${usd(fireOther)} in ${real ? "future" : "today's"} $`],
+    ["Coast number", usd(coastNum), `needed at age ${x.coast} (${tag})`],
+    ["Total contributed", usd(contrib), `new savings only, not your ${usd(x.pv)} start (${tag})`],
+    ["Balance at retirement", usd(finalBal), `age ${x.ret} (${tag})`],
+  ].map(([k, v, d]) => `<div class="stat"><span class="k">${k}</span><span class="v">${v}</span><span class="d">${d}</span></div>`).join("");
+
+  $("chartSub").textContent = `Amounts in ${basis}. The target path is the balance you'd need at each age to reach your FIRE number with no further saving.`;
+  $("tblSub").textContent = `Amounts in ${basis}. The highlighted row is your coast age.`;
+  draw(r, x);
+
+  $("tbl").innerHTML = "<thead><tr>" + ["Age", "Contributions", "Growth", "End balance"].map(h => `<th scope="col">${h}</th>`).join("") + "</tr></thead><tbody>" +
+    r.rows.map(w => `<tr${w.coastRow ? ' class="mark"' : ""}><td>${w.age}</td><td>${usd(real ? w.contributionsReal : w.contributions)}</td><td>${usd(real ? w.growthReal : w.growth)}</td><td>${usd(real ? w.balanceReal : w.balance)}</td></tr>`).join("") + "</tbody>";
+}
+
+let chart;
+const FF = '"Public Sans", system-ui, sans-serif';
+function draw(r, x) {
+  if (typeof Chart === "undefined") return;
+  const pts = [{ age: r.start.age, b: r.start.balance, t: r.start.target }, ...r.rows.map(w => ({ age: w.age, b: real ? w.balanceReal : w.balance, t: real ? w.targetReal : w.target }))];
+  const labels = pts.map(p => p.age), line = css("--line"), muted = css("--muted"), surface = css("--surface");
+  const ds = [
+    { label: "Projected balance", data: pts.map(p => p.b), borderColor: css("--s1"), backgroundColor: css("--s1"), borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 4, tension: 0.15 },
+    { label: "FIRE target path", data: pts.map(p => p.t), borderColor: css("--s3"), backgroundColor: css("--s3"), borderWidth: 2, borderDash: [6, 4], pointRadius: 0, pointHoverRadius: 4, tension: 0.15 },
+  ];
+  const opts = {
+    responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: "index", intersect: false },
+    plugins: {
+      legend: { position: "top", align: "start", labels: { color: css("--ink-2"), boxWidth: 12, boxHeight: 12, font: { family: FF } } },
+      tooltip: { backgroundColor: surface, titleColor: css("--ink"), bodyColor: css("--ink-2"), borderColor: line, borderWidth: 1, padding: 10,
+        titleFont: { family: FF, weight: "600" }, bodyFont: { family: FF },
+        callbacks: { title: i => "Age " + i[0].label + (Number(i[0].label) === x.coast ? " (coast age)" : ""), label: c => ` ${c.dataset.label}: ${usd(c.parsed.y)}` } }
+    },
+    scales: {
+      x: { title: { display: true, text: "Age", color: muted, font: { family: FF } }, grid: { display: false }, border: { color: line }, ticks: { color: muted, font: { family: FF }, maxRotation: 0, autoSkipPadding: 10 } },
+      y: { beginAtZero: true, grid: { color: line }, border: { display: false }, ticks: { color: muted, font: { family: FF }, callback: v => usdK(v), maxTicksLimit: 6 } }
+    }
+  };
+  if (chart) { chart.data.labels = labels; chart.data.datasets = ds; chart.options = opts; chart.update(); }
+  else chart = new Chart($("c1"), { type: "line", data: { labels, datasets: ds }, options: opts });
+}
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { chart && chart.destroy(); chart = null; run(); });
+run();
+</script>
+</body>
+</html>
