@@ -10,7 +10,7 @@
   --line:#dde2de; --field:#ffffff; --accent:#1c5a4b; --accent-soft:#e2eee9;
   --s-principal:#2a78d6; --s-interest:#eb6834; --s-tax:#1baf7a; --s-ins:#eda100; --s-hoa:#e87ba4;
   --s-balance:#4a3aa7; --s-total:#121614;
-  --good:#1a7f4b;
+  --good:#1a7f4b; --bad:#b3261e; --bad-soft:#fbe9e7; --s-pmi:#9a6b3c;
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
@@ -18,7 +18,7 @@
     --bg:#111312; --surface:#1a1c1b; --ink:#f1f3f1; --ink-2:#c1c7c2; --muted:#8e958f;
     --line:#2d312f; --field:#151716; --accent:#72c7a9; --accent-soft:#1f2d28;
     --s-principal:#3987e5; --s-interest:#d95926; --s-tax:#199e70; --s-ins:#c98500; --s-hoa:#d55181;
-    --s-balance:#9085e9; --s-total:#f1f3f1; --good:#5cc68f;
+    --s-balance:#9085e9; --s-total:#f1f3f1; --good:#5cc68f; --bad:#f2877f; --bad-soft:#3a1f1d; --s-pmi:#c08a55;
   }
 }
 :root[data-theme="dark"]{
@@ -26,7 +26,7 @@
   --bg:#111312; --surface:#1a1c1b; --ink:#f1f3f1; --ink-2:#c1c7c2; --muted:#8e958f;
   --line:#2d312f; --field:#151716; --accent:#72c7a9; --accent-soft:#1f2d28;
   --s-principal:#3987e5; --s-interest:#d95926; --s-tax:#199e70; --s-ins:#c98500; --s-hoa:#d55181;
-  --s-balance:#9085e9; --s-total:#f1f3f1; --good:#5cc68f;
+  --s-balance:#9085e9; --s-total:#f1f3f1; --good:#5cc68f; --bad:#f2877f; --bad-soft:#3a1f1d; --s-pmi:#c08a55;
 }
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font:15px/1.5 "Public Sans",system-ui,-apple-system,"Segoe UI",sans-serif;font-variant-numeric:tabular-nums}
@@ -78,17 +78,63 @@ th{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--mute
 th:first-child,td:first-child{text-align:left}
 tr.payoff td{background:var(--accent-soft);font-weight:600}
 .note{font-size:12.5px;color:var(--muted);margin:0}
+.reset{border:1px solid var(--line);background:transparent;color:var(--ink-2);border-radius:7px;font:500 13px "Public Sans",system-ui,sans-serif;padding:10px;cursor:pointer;min-height:40px}
+.reset:hover{border-color:var(--accent);color:var(--ink)}
+.reset:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.errbox{background:var(--bad-soft);border:1px solid var(--bad);color:var(--ink);border-radius:10px;padding:14px 18px}
+.errbox strong{color:var(--bad);font-weight:600}
+.errbox ul{margin:6px 0 0;padding-left:20px}
+.chk{flex-direction:row;align-items:center;gap:8px}
+.chk input{accent-color:var(--accent);width:16px;height:16px;margin:0}
+.chk label{cursor:pointer}
+.in input:disabled{color:var(--ink-2);cursor:not-allowed}
 </style>
 
 <div class="wrap">
   <header>
     <h1>Mortgage Payoff Planner</h1>
-    <p>Model how extra principal shortens the loan, and what owning the home still costs once the mortgage is gone.</p>
+    <p id="hdrP">Model how extra principal shortens the loan, and what owning the home still costs once the mortgage is gone.</p>
   </header>
 
   <div class="layout">
     <aside aria-label="Inputs">
-      <fieldset>
+      <div class="seg" role="group" aria-label="Mode">
+        <button type="button" id="bBuy" aria-pressed="true">Buying a home</button>
+        <button type="button" id="bOwn" aria-pressed="false">I already have a mortgage</button>
+      </div>
+
+      <fieldset id="fsOwnLoan" hidden>
+        <legend>Your loan today</legend>
+        <div class="f"><label for="oBal">Current balance</label><div class="in"><span>$</span><input id="oBal" type="number" min="0" step="1000" value="250000"></div></div>
+        <div class="f"><label for="oRate">Interest rate</label><div class="in"><input id="oRate" type="number" min="0" max="25" step="0.125" value="6.5"><span>%</span></div></div>
+        <div class="seg" id="knowSeg" role="group" aria-label="What I know">
+          <button type="button" id="kPay" aria-pressed="true">Monthly payment</button>
+          <button type="button" id="kTime" aria-pressed="false">Time left</button>
+          <button type="button" id="kOrig" aria-pressed="false">Original loan</button>
+        </div>
+        <div class="f full" data-k="pay"><label for="oPay">Monthly principal &amp; interest</label><div class="in"><span>$</span><input id="oPay" type="number" min="0" step="10" value="1700"><span>/mo</span></div></div>
+        <div class="f" data-k="time" hidden><label for="oYrs">Years left</label><div class="in"><input id="oYrs" type="number" min="0" max="40" step="1" value="25"><span>yrs</span></div></div>
+        <div class="f" data-k="time" hidden><label for="oMos">Months left</label><div class="in"><input id="oMos" type="number" min="0" max="11" step="1" value="0"><span>mo</span></div></div>
+        <div class="f" data-k="orig" hidden><label for="oOrig">Original amount</label><div class="in"><span>$</span><input id="oOrig" type="number" min="0" step="5000" value="300000"></div></div>
+        <div class="f" data-k="orig" hidden><label for="oTerm">Original term</label><div class="in"><input id="oTerm" type="number" min="1" max="40" step="1" value="30"><span>yrs</span></div></div>
+        <div class="f full" data-k="orig" hidden><label for="oStart">First payment month</label><div class="in"><input id="oStart" type="month" value="2020-01"></div></div>
+        <p class="hint" id="hKnow" style="grid-column:1/-1;margin:0"></p>
+        <div class="f full"><label for="nextPay">Next payment month</label><div class="in"><input id="nextPay" type="month" value=""></div></div>
+      </fieldset>
+
+      <fieldset id="fsOwnEsc" hidden>
+        <legend>Escrow &amp; other</legend>
+        <div class="f"><label for="oTax">Property tax</label><div class="in"><span>$</span><input id="oTax" type="number" min="0" step="100" value="4000"><span>/yr</span></div></div>
+        <div class="f"><label for="oIns">Insurance</label><div class="in"><span>$</span><input id="oIns" type="number" min="0" step="100" value="1800"><span>/yr</span></div></div>
+        <div class="f"><label for="oPmi">PMI</label><div class="in"><span>$</span><input id="oPmi" type="number" min="0" step="5" value="0"><span>/mo</span></div></div>
+        <div class="f"><label for="oHoa">HOA</label><div class="in"><span>$</span><input id="oHoa" type="number" min="0" step="5" value="0"><span>/mo</span></div></div>
+        <div class="f full"><label for="oInfl">Inflation (tax, insurance, HOA)</label><div class="in"><input id="oInfl" type="number" min="0" max="15" step="0.25" value="3"><span>%/yr</span></div></div>
+        <div class="f"><label for="oHome">Home value (optional)</label><div class="in"><span>$</span><input id="oHome" type="number" min="0" step="5000" value="0"></div></div>
+        <div class="f"><label for="oPmiLtv">PMI removed at LTV</label><div class="in"><input id="oPmiLtv" type="number" min="1" max="100" step="1" value="78"><span>%</span></div></div>
+        <p class="hint" id="hHome" style="grid-column:1/-1;margin:0">Enter a home value (0 = unknown) to see equity and when PMI drops off. Without it, PMI continues until payoff.</p>
+      </fieldset>
+
+      <fieldset id="fsLoan">
         <legend>Loan</legend>
         <div class="f full"><label for="price">Home price</label><div class="in"><span>$</span><input id="price" type="number" min="0" step="5000" value="400000"></div></div>
         <div class="f"><label for="downAmt">Down payment</label><div class="in"><span>$</span><input id="downAmt" type="number" min="0" step="1000" value="80000"></div></div>
@@ -102,10 +148,12 @@ tr.payoff td{background:var(--accent-soft);font-weight:600}
         <legend>Extra principal</legend>
         <div class="f"><label for="extraMo">Monthly</label><div class="in"><span>$</span><input id="extraMo" type="number" min="0" step="50" value="200"></div></div>
         <div class="f"><label for="extraYr">Yearly lump sum</label><div class="in"><span>$</span><input id="extraYr" type="number" min="0" step="500" value="0"></div></div>
-        <p class="hint" style="grid-column:1/-1;margin:0">Lump sum is applied with the 12th payment of each loan year.</p>
+        <div class="f" id="fLump" hidden><label for="lumpNow">One-time lump sum now</label><div class="in"><span>$</span><input id="lumpNow" type="number" min="0" step="1000" value="0"></div></div>
+        <div class="f chk" id="fBi" hidden><input id="biweekly" type="checkbox"><label for="biweekly">Biweekly payments</label></div>
+        <p class="hint" id="hExtra" style="grid-column:1/-1;margin:0">Lump sum is applied with the 12th payment of each loan year.</p>
       </fieldset>
 
-      <fieldset>
+      <fieldset id="fsCarry">
         <legend>Carrying costs</legend>
         <div class="f"><label for="taxRate">Property tax</label><div class="in"><input id="taxRate" type="number" min="0" max="10" step="0.05" value="2.2"><span>%/yr</span></div></div>
         <div class="f"><label for="ins">Insurance</label><div class="in"><span>$</span><input id="ins" type="number" min="0" step="100" value="3000"><span>/yr</span></div></div>
@@ -122,30 +170,32 @@ tr.payoff td{background:var(--accent-soft);font-weight:600}
           <button type="button" id="bReal" aria-pressed="false">Today's dollars</button>
         </div>
       </fieldset>
+      <button type="button" class="reset" id="reset">Reset to defaults</button>
     </aside>
 
     <main>
+      <div id="errs"></div>
       <section class="stats" id="stats" aria-label="Summary"></section>
 
-      <section class="panel">
+      <section class="panel" id="pn1">
         <h2>Yearly housing cost</h2>
         <p class="sub" id="sub1">What you pay each year, split into principal, interest and carrying costs. After payoff only taxes, insurance and HOA remain.</p>
         <div class="chart"><canvas id="c1" aria-label="Stacked bar chart of yearly housing cost" role="img"></canvas></div>
       </section>
 
-      <section class="panel">
+      <section class="panel" id="pn2">
         <h2>Cumulative payments</h2>
         <p class="sub">Running totals of everything paid, principal and interest, with the remaining loan balance.</p>
         <div class="chart"><canvas id="c2" aria-label="Line chart of cumulative payments and loan balance" role="img"></canvas></div>
       </section>
 
-      <section class="panel">
+      <section class="panel" id="pn3">
         <details id="tblWrap">
           <summary>Year-by-year schedule</summary>
           <div class="tbl"><table id="tbl"></table></div>
         </details>
       </section>
-      <p class="note">Excludes PMI, closing costs, maintenance and home appreciation. Property tax is held to the purchase price grown by inflation, not to reassessed market value.</p>
+      <p class="note" id="note">Excludes PMI, closing costs, maintenance and home appreciation. Property tax is held to the purchase price grown by inflation, not to reassessed market value.</p>
     </main>
   </div>
 </div>
@@ -165,9 +215,230 @@ const durStr = mo => { const y = Math.floor(mo/12), m = mo%12; return (y? y+' yr
 $('downAmt').addEventListener('input', () => { const p = num('price'); $('downPct').value = p ? +(num('downAmt')/p*100).toFixed(2) : 0; run(); });
 $('downPct').addEventListener('input', () => { $('downAmt').value = Math.round(num('price')*num('downPct')/100); run(); });
 $('price').addEventListener('input', () => { $('downAmt').value = Math.round(num('price')*num('downPct')/100); run(); });
-['rate','term','start','extraMo','extraYr','taxRate','ins','hoa','infl','horizon'].forEach(id => $(id).addEventListener('input', run));
-$('bNom').onclick = () => { real = false; $('bNom').setAttribute('aria-pressed','true'); $('bReal').setAttribute('aria-pressed','false'); run(); };
-$('bReal').onclick = () => { real = true; $('bReal').setAttribute('aria-pressed','true'); $('bNom').setAttribute('aria-pressed','false'); run(); };
+const KEY = 'mortgage-payoff-v2';
+const FIELDS = ['price','downAmt','downPct','rate','term','start','extraMo','extraYr','taxRate','ins','hoa','infl','horizon',
+  'oBal','oRate','oPay','oYrs','oMos','oOrig','oTerm','oStart','nextPay','oTax','oIns','oPmi','oHoa','oInfl','oHome','oPmiLtv','lumpNow','biweekly'];
+const CHECKS = ['biweekly'];
+let mode = 'buy', know = 'pay', userBal = '250000';
+const MODE_TXT = {
+  buy: ['Model how extra principal shortens the loan, and what owning the home still costs once the mortgage is gone.',
+        'Excludes PMI, closing costs, maintenance and home appreciation. Property tax is held to the purchase price grown by inflation, not to reassessed market value.'],
+  own: ['See how extra payments shorten the mortgage you already have, how much interest they save, and what the home costs once it is paid off.',
+        'Figures start with your next payment. Extra principal is applied after each scheduled payment; biweekly payments are modeled as one-twelfth of the payment added each month. Tax, insurance and HOA grow with inflation; PMI does not. Excludes maintenance and home appreciation, and your servicer\'s balance may differ slightly.']
+};
+const nextMonthStr = () => { const d = new Date(); const i = d.getFullYear()*12 + d.getMonth() + 1; return Math.floor(i/12) + '-' + String(i%12+1).padStart(2,'0'); };
+$('nextPay').value = nextMonthStr();
+const DEFAULTS = {};
+FIELDS.forEach(k => DEFAULTS[k] = CHECKS.includes(k) ? $(k).checked : $(k).value);
+
+FIELDS.filter(k => !['downAmt','downPct','price'].includes(k)).forEach(id => $(id).addEventListener('input', () => { if (id === 'oBal') userBal = $('oBal').value; run(); }));
+$('biweekly').addEventListener('change', run);
+
+function setBasis(r) { real = r; $('bReal').setAttribute('aria-pressed', r); $('bNom').setAttribute('aria-pressed', !r); }
+function setMode(m) {
+  mode = m; const own = m === 'own';
+  $('bBuy').setAttribute('aria-pressed', !own); $('bOwn').setAttribute('aria-pressed', own);
+  ['fsLoan','fsCarry'].forEach(i => $(i).hidden = own);
+  ['fsOwnLoan','fsOwnEsc','fLump','fBi'].forEach(i => $(i).hidden = !own);
+  $('hExtra').textContent = own ? 'Extra principal and the lump sum start with your next payment. Yearly lump sum is applied with every 12th payment from then.' : 'Lump sum is applied with the 12th payment of each loan year.';
+  $('hdrP').textContent = MODE_TXT[m][0]; $('note').textContent = MODE_TXT[m][1];
+  if (c1 || c2) { c1 && c1.destroy(); c2 && c2.destroy(); c1 = c2 = null; }
+}
+function setKnow(k) {
+  know = k;
+  [['kPay','pay'],['kTime','time'],['kOrig','orig']].forEach(([i,v]) => $(i).setAttribute('aria-pressed', v === k));
+  document.querySelectorAll('[data-k]').forEach(e => e.hidden = e.dataset.k !== k);
+  $('oBal').disabled = k === 'orig';
+  if (k !== 'orig') $('oBal').value = userBal;
+}
+$('bNom').onclick = () => { setBasis(false); run(); };
+$('bReal').onclick = () => { setBasis(true); run(); };
+$('bBuy').onclick = () => { setMode('buy'); run(); };
+$('bOwn').onclick = () => { setMode('own'); run(); };
+$('kPay').onclick = () => { setKnow('pay'); run(); };
+$('kTime').onclick = () => { setKnow('time'); run(); };
+$('kOrig').onclick = () => { setKnow('orig'); run(); };
+$('reset').onclick = () => {
+  FIELDS.forEach(k => { if (CHECKS.includes(k)) $(k).checked = DEFAULTS[k]; else $(k).value = DEFAULTS[k]; });
+  userBal = DEFAULTS.oBal; setBasis(false); setMode('buy'); setKnow('pay'); run();
+};
+function save() {
+  try {
+    const o = {mode, know, real};
+    FIELDS.forEach(k => o[k] = CHECKS.includes(k) ? $(k).checked : (k === 'oBal' ? userBal : $(k).value));
+    localStorage.setItem(KEY, JSON.stringify(o));
+  } catch (e) {}
+}
+function restore() {
+  try {
+    const sv = JSON.parse(localStorage.getItem(KEY) || 'null');
+    if (!sv || typeof sv !== 'object') return;
+    FIELDS.forEach(k => { if (sv[k] == null) return; if (CHECKS.includes(k)) $(k).checked = !!sv[k]; else $(k).value = sv[k]; });
+    if (sv.oBal != null) userBal = String(sv.oBal);
+    if (sv.real != null) setBasis(!!sv.real);
+    if (sv.mode === 'own' || sv.mode === 'buy') mode = sv.mode;
+    if (['pay','time','orig'].includes(sv.know)) know = sv.know;
+  } catch (e) {}
+}
+
+// ---- existing-mortgage calculator (pure) ----
+function mortgageCalc(p) {
+  const errors = [];
+  const bal = Number(p.balance), rate = Number(p.rate);
+  const extraMo = Math.max(Number(p.extraMo) || 0, 0), extraYr = Math.max(Number(p.extraYr) || 0, 0), lump = Math.max(Number(p.lumpNow) || 0, 0);
+  const hv = Math.max(Number(p.homeValue) || 0, 0), pmi = Math.max(Number(p.pmi) || 0, 0), thr = hv * (Number(p.pmiLtv) || 0) / 100;
+  if (!(bal > 0)) errors.push('Current balance must be more than $0.');
+  if (!(rate >= 0 && rate <= 25)) errors.push('Interest rate must be between 0% and 25%.');
+  const r = rate / 1200;
+  let pmt = p.payment == null ? null : Number(p.payment), n = p.remainingMonths == null ? null : Math.round(Number(p.remainingMonths));
+  if (!errors.length) {
+    if (pmt == null && n == null) errors.push('Enter a monthly payment or the time left.');
+    else if (pmt != null) {
+      const interest = bal * r;
+      if (!(pmt > interest + 1e-9)) errors.push('Payment must be more than the monthly interest of $' + interest.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + '.');
+      else if (n == null) n = r === 0 ? Math.ceil(bal / pmt - 1e-9) : Math.ceil(-Math.log(1 - bal * r / pmt) / Math.log(1 + r) - 1e-9);
+    } else {
+      if (!(n >= 1 && n <= 480)) errors.push('Remaining time must be between 1 and 480 months.');
+      else pmt = r === 0 ? bal / n : bal * r / (1 - Math.pow(1 + r, -n));
+    }
+    if (!errors.length && !(n >= 1 && n <= 480)) errors.push('Remaining time must be between 1 and 480 months (about 40 years); this payment is too small.');
+  }
+  if (errors.length) return {payment: pmt, remainingMonths: n, scheduleMonths: null, planMonths: null, monthsSaved: null, interestSchedule: null, interestPlan: null, interestSaved: null, pmiEndMonthSchedule: null, pmiEndMonthPlan: null, errors};
+
+  const sim = (xMo, xYr, lp) => {
+    let b = bal, m = 0, tot = 0, pmiEnd = null; const rows = [];
+    while (b > 0.005 && m < 1200) {
+      m++;
+      if (pmiEnd === null && hv > 0 && b <= thr) pmiEnd = m;
+      const pm = (hv > 0 && pmiEnd !== null) ? 0 : pmi;
+      const interest = b * r, principal = Math.min(pmt - interest, b);
+      b -= principal;
+      const extra = Math.min(xMo + (m % 12 === 0 ? xYr : 0) + (m === 1 ? lp : 0), b);
+      b -= extra; tot += interest;
+      if (b <= 0.005) b = 0;
+      rows.push({m, interest, principal: principal + extra, extra, bal: b, pmi: pm});
+    }
+    if (hv > 0 && pmiEnd === null) pmiEnd = m + 1;
+    return {months: m, interest: tot, pmiEnd, rows};
+  };
+  const sch = sim(0, 0, 0);
+  const plan = sim(extraMo + (p.biweekly ? pmt / 12 : 0), extraYr, lump);
+  return {payment: pmt, remainingMonths: n, scheduleMonths: sch.months, planMonths: plan.months, monthsSaved: sch.months - plan.months,
+    interestSchedule: sch.interest, interestPlan: plan.interest, interestSaved: sch.interest - plan.interest,
+    pmiEndMonthSchedule: sch.pmiEnd, pmiEndMonthPlan: plan.pmiEnd, errors,
+    rowsSchedule: sch.rows, rowsPlan: plan.rows};
+}
+window.mortgageCalc = mortgageCalc;
+window.mortgagePurchase = (loan, rate, termYrs, extraMo, extraYr, months) => amortize(loan, rate, termYrs, extraMo, extraYr, months);
+
+function showErrs(list) {
+  $('errs').innerHTML = list ? '<div class="errbox" role="alert"><strong>Fix these inputs to see results:</strong><ul>' + list.map(m => '<li>' + m + '</li>').join('') + '</ul></div>' : '';
+  ['stats','pn1','pn2','pn3'].forEach(i => $(i).hidden = !!list);
+}
+const monthIdx = v => { const [y, m] = (v || '').split('-').map(Number); return y && m ? y*12 + m - 1 : null; };
+const idxLabel = i => ym(Math.floor(i/12), i%12);
+const pmtFor = (b, r, n) => r === 0 ? b/n : b*r/(1-Math.pow(1+r,-n));
+
+function run() {
+  save();
+  if (mode === 'own') runOwn();
+  else { showErrs(null); runBuy(); }
+}
+
+function runOwn() {
+  const errs = [];
+  const rate = num('oRate'), r = rate/1200;
+  const nextIdx = monthIdx($('nextPay').value);
+  if (nextIdx == null) errs.push('Choose the next payment month.');
+  let balance = parseFloat(userBal); if (!isFinite(balance)) balance = 0;
+  let payment = null, remaining = null;
+  $('hKnow').textContent = '';
+  if (know === 'pay') payment = num('oPay');
+  else if (know === 'time') remaining = Math.round(num('oYrs')*12 + num('oMos'));
+  else {
+    const O = num('oOrig'), T = Math.round(num('oTerm')*12), sIdx = monthIdx($('oStart').value);
+    if (!(O > 0)) errs.push('Original loan amount must be more than $0.');
+    if (!(T >= 1 && T <= 480)) errs.push('Original term must be between 1 and 40 years.');
+    if (sIdx == null) errs.push('Choose the first payment month.');
+    if (!errs.length && rate >= 0 && rate <= 25) {
+      const made = nextIdx - sIdx;
+      if (made < 1) errs.push('First payment month must be in the past (before the next payment month).');
+      else if (T - made < 1) errs.push('This loan would already be paid off by its original schedule.');
+      else {
+        payment = pmtFor(O, r, T); remaining = T - made;
+        balance = r === 0 ? O - payment*made : O*Math.pow(1+r, made) - payment*(Math.pow(1+r, made) - 1)/r;
+        balance = Math.max(balance, 0);
+        $('hKnow').textContent = `Scheduled balance after ${made} payments: ${usd(balance, 2)} · P&I ${usd(payment, 2)} · ${durStr(remaining)} left`;
+      }
+    }
+    $('oBal').value = errs.length ? '' : balance.toFixed(2);
+  }
+  const hv = num('oHome'), pmiAmt = num('oPmi'), infl = num('oInfl')/100;
+  const horizon = Math.max(Math.round(num('horizon')), 1);
+  const P = {balance, rate, payment, remainingMonths: remaining, extraMo: num('extraMo'), extraYr: num('extraYr'), lumpNow: num('lumpNow'),
+    biweekly: $('biweekly').checked, homeValue: hv, pmi: pmiAmt, pmiLtv: num('oPmiLtv')};
+  let res = null;
+  if (!errs.length) { res = mortgageCalc(P); errs.push(...res.errors); }
+  if (!errs.length) {
+    if (know === 'pay') $('hKnow').textContent = `Remaining: ${durStr(res.remainingMonths)} (${res.remainingMonths} payments)`;
+    else if (know === 'time') $('hKnow').textContent = `Derived P&I payment: ${usd(res.payment, 2)}/mo`;
+  }
+  if (hv > 0 && !errs.length) {
+    $('hHome').textContent = `Equity now ${usd(hv - balance)} · LTV ${(balance/hv*100).toFixed(1)}%. PMI stops once the balance is at or below ${num('oPmiLtv')}% of home value.`;
+  } else $('hHome').textContent = 'Enter a home value (0 = unknown) to see equity and when PMI drops off. Without it, PMI continues until payoff.';
+  if (errs.length) { showErrs(errs); return; }
+  showErrs(null);
+
+  const pmt = res.payment, plan = res.rowsPlan, sch = res.rowsSchedule, po = res.planMonths, spo = res.scheduleMonths;
+  const zero = {interest: 0, principal: 0, pmi: 0, bal: 0};
+  const sy = Math.floor(nextIdx/12);
+  const years = [];
+  const cum = {total: 0, principal: 0, interest: 0};
+  for (let y = 0; y < horizon; y++) {
+    const f = Math.pow(1+infl, y), d = real ? f : 1;
+    const row = {y: y+1, principal: 0, interest: 0, tax: 0, ins: 0, hoa: 0, pmi: 0, bal: 0, sbal: 0};
+    for (let k = 0; k < 12; k++) {
+      const i = y*12 + k, a = plan[i] || zero, b = sch[i] || zero;
+      row.principal += a.principal/d; row.interest += a.interest/d; row.pmi += a.pmi/d;
+      row.tax += num('oTax')*f/12/d; row.ins += num('oIns')*f/12/d; row.hoa += num('oHoa')*f/d;
+      row.bal = a.bal/d; row.sbal = b.bal/d;
+    }
+    row.total = row.principal + row.interest + row.tax + row.ins + row.hoa + row.pmi;
+    cum.total += row.total; cum.principal += row.principal; cum.interest += row.interest;
+    row.cTotal = cum.total; row.cPrincipal = cum.principal; row.cInterest = cum.interest;
+    row.span = idxLabel(nextIdx + y*12) + ' – ' + idxLabel(nextIdx + y*12 + 11);
+    years.push(row);
+  }
+
+  const esc1 = {tax: num('oTax')/12, ins: num('oIns')/12, hoa: num('oHoa')};
+  const escSum = esc1.tax + esc1.ins + esc1.hoa;
+  const pmiNow = plan[0].pmi;
+  const extraNow = num('extraMo') + ($('biweekly').checked ? pmt/12 : 0);
+  const month1 = pmt + extraNow + escSum + pmiNow;
+  const poLabel = idxLabel(nextIdx + po - 1);
+  const poYear = Math.ceil(po/12);
+  const fAfter = Math.pow(1+infl, Math.floor(po/12));
+  const afterNom = escSum*fAfter;
+  const afterShown = real ? afterNom/fAfter : afterNom;
+  const saved = res.monthsSaved;
+  const stats = [
+    ['Principal & interest', usd(pmt, 2), know === 'pay' ? `${durStr(res.remainingMonths)} left at ${rate}%` : `${usd(balance)} at ${rate}% · ${durStr(res.remainingMonths)} left`],
+    ['Monthly total now', usd(month1), `${usd(pmt)} P&I` + (extraNow > 0 ? ` + ${usd(extraNow)} extra` : '') + ` + ${usd(escSum + pmiNow)} escrow/other`],
+    ['Paid off', poLabel, `${durStr(po)}` + (saved > 0 ? ` · <b>${durStr(saved)} early</b>` : ' · on schedule')],
+    ['Interest remaining', usd(res.interestPlan), res.interestSaved > 1 ? `<b>${usd(res.interestSaved)} saved</b> vs. staying on schedule` : `${usd(res.interestSchedule)} on schedule`],
+  ];
+  if (hv > 0) stats.push(['Equity now', usd(hv - balance), `${(balance/hv*100).toFixed(1)}% LTV on ${usd(hv)} home`]);
+  if (pmiAmt > 0 && hv > 0) {
+    const eP = res.pmiEndMonthPlan, eS = res.pmiEndMonthSchedule, pSaved = pmiAmt * (eS - eP);
+    stats.push(['PMI ends', eP <= 1 ? 'Already off' : idxLabel(nextIdx + eP - 1),
+      (eP <= 1 ? `balance is under ${num('oPmiLtv')}% LTV` : `on schedule ${idxLabel(nextIdx + eS - 1)}`) + (pSaved > 0.5 ? ` · <b>${usd(pSaved)} saved</b>` : '')]);
+  }
+  stats.push(['Monthly cost after payoff', usd(afterShown), real ? `in today's dollars` : `in ${poLabel.split(' ')[1]} dollars · ${usd(escSum)} today`]);
+  $('stats').innerHTML = stats.map(([k,v,d]) => `<div class="stat"><span class="k">${k}</span><span class="v">${v}</span><span class="d">${d}</span></div>`).join('');
+  $('sub1').textContent = `What you pay each year from your next payment${real ? ", in today's dollars" : ''}, split into principal, interest, PMI and carrying costs. After payoff only taxes, insurance and HOA remain.`;
+  draw(years, poYear, poLabel, true);
+  table(years, poYear, true);
+}
 
 function amortize(loan, rate, termYrs, extraMo, extraYr, months) {
   const r = rate/100/12, n = Math.round(termYrs*12);
@@ -189,7 +460,7 @@ function amortize(loan, rate, termYrs, extraMo, extraYr, months) {
   return {pmt, rows, payoff, totInt};
 }
 
-function run() {
+function runBuy() {
   const price = num('price'), down = Math.min(num('downAmt'), price), loan = Math.max(price - down, 0);
   const rate = num('rate'), term = Math.max(num('term'),1);
   const infl = num('infl')/100;
@@ -246,8 +517,8 @@ function run() {
 
   $('sub1').textContent = `What you pay each loan year${real ? ", in today's dollars" : ''}, split into principal, interest and carrying costs. After payoff only taxes, insurance and HOA remain.`;
 
-  draw(years, poYear, poLabel);
-  table(years, poYear);
+  draw(years, poYear, poLabel, false);
+  table(years, poYear, false);
 }
 
 // ---- charts ----
@@ -297,7 +568,7 @@ function baseOpts(poYear, poLabel) {
   };
 }
 
-function draw(years, poYear, poLabel) {
+function draw(years, poYear, poLabel, own) {
   const labels = years.map(r => 'Yr ' + r.y);
   const surface = css('--surface');
   const bar = (label, key, color) => ({label, data: years.map(r => r[key]), backgroundColor: color, borderColor: surface, borderWidth: {top: 2}, borderSkipped: false, borderRadius: 0, stack: 's', barPercentage: .82, categoryPercentage: 1, pointStyle: 'rectRounded'});
@@ -313,6 +584,7 @@ function draw(years, poYear, poLabel) {
     bar('Insurance', 'ins', css('--s-ins')),
     bar('HOA', 'hoa', css('--s-hoa')),
   ];
+  if (own) d1.push(bar('PMI', 'pmi', css('--s-pmi')));
   const ln = (label, key, color, dash) => ({label, data: years.map(r => r[key]), borderColor: color, backgroundColor: color, borderWidth: 2, borderDash: dash || [], pointRadius: 0, pointHoverRadius: 5, pointHoverBorderColor: surface, pointHoverBorderWidth: 2, tension: .15, pointStyle: 'circle'});
   const o2 = baseOpts(poYear, poLabel);
   o2.plugins.tooltip.callbacks.title = items => `End of year ${years[items[0].dataIndex].y}`;
@@ -322,16 +594,17 @@ function draw(years, poYear, poLabel) {
     ln('Interest paid', 'cInterest', css('--s-interest')),
     ln('Loan balance', 'bal', css('--s-balance'), [6,4]),
   ];
+  if (own) { d2.push(ln('Balance on schedule', 'sbal', css('--muted'), [2,4])); d2[d2.length-1].borderWidth = 1.5; }
   if (c1) { c1.data.labels = labels; c1.data.datasets = d1; c1.options = o1; c1.update(); }
   else c1 = new Chart($('c1'), {type: 'bar', data: {labels, datasets: d1}, options: o1, plugins: [payoffLine]});
   if (c2) { c2.data.labels = labels; c2.data.datasets = d2; c2.options = o2; c2.update(); }
   else c2 = new Chart($('c2'), {type: 'line', data: {labels, datasets: d2}, options: o2, plugins: [payoffLine]});
 }
 
-function table(years, poYear) {
-  const h = ['Year','Dates','Principal','Interest','Property tax','Insurance','HOA','Total','Balance'];
+function table(years, poYear, own) {
+  const h = ['Year','Dates','Principal','Interest','Property tax','Insurance','HOA'].concat(own ? ['PMI'] : [], ['Total','Balance']);
   $('tbl').innerHTML = '<thead><tr>' + h.map(x => `<th scope="col">${x}</th>`).join('') + '</tr></thead><tbody>' +
-    years.map(r => `<tr${r.y === poYear ? ' class="payoff"' : ''}><td>${r.y}</td><td style="text-align:left">${r.span}</td><td>${usd(r.principal)}</td><td>${usd(r.interest)}</td><td>${usd(r.tax)}</td><td>${usd(r.ins)}</td><td>${usd(r.hoa)}</td><td>${usd(r.total)}</td><td>${usd(r.bal)}</td></tr>`).join('') + '</tbody>';
+    years.map(r => `<tr${r.y === poYear ? ' class="payoff"' : ''}><td>${r.y}</td><td style="text-align:left">${r.span}</td><td>${usd(r.principal)}</td><td>${usd(r.interest)}</td><td>${usd(r.tax)}</td><td>${usd(r.ins)}</td><td>${usd(r.hoa)}</td>${own ? `<td>${usd(r.pmi)}</td>` : ''}<td>${usd(r.total)}</td><td>${usd(r.bal)}</td></tr>`).join('') + '</tbody>';
 }
 
 // redraw on theme change
@@ -340,6 +613,8 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', red
 new MutationObserver(redraw).observe(document.documentElement, {attributes: true, attributeFilter: ['data-theme']});
 
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => c1 && redraw());
+restore();
+setMode(mode); setKnow(know);
 run();
 </script>
 
