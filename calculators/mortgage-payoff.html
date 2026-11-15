@@ -1,0 +1,346 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Mortgage Payoff Planner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{
+  --bg:#f3f5f3; --surface:#fcfcfb; --ink:#121614; --ink-2:#4b534e; --muted:#737b76;
+  --line:#dde2de; --field:#ffffff; --accent:#1c5a4b; --accent-soft:#e2eee9;
+  --s-principal:#2a78d6; --s-interest:#eb6834; --s-tax:#1baf7a; --s-ins:#eda100; --s-hoa:#e87ba4;
+  --s-balance:#4a3aa7; --s-total:#121614;
+  --good:#1a7f4b;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#111312; --surface:#1a1c1b; --ink:#f1f3f1; --ink-2:#c1c7c2; --muted:#8e958f;
+    --line:#2d312f; --field:#151716; --accent:#72c7a9; --accent-soft:#1f2d28;
+    --s-principal:#3987e5; --s-interest:#d95926; --s-tax:#199e70; --s-ins:#c98500; --s-hoa:#d55181;
+    --s-balance:#9085e9; --s-total:#f1f3f1; --good:#5cc68f;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#111312; --surface:#1a1c1b; --ink:#f1f3f1; --ink-2:#c1c7c2; --muted:#8e958f;
+  --line:#2d312f; --field:#151716; --accent:#72c7a9; --accent-soft:#1f2d28;
+  --s-principal:#3987e5; --s-interest:#d95926; --s-tax:#199e70; --s-ins:#c98500; --s-hoa:#d55181;
+  --s-balance:#9085e9; --s-total:#f1f3f1; --good:#5cc68f;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:15px/1.5 "Public Sans",system-ui,-apple-system,"Segoe UI",sans-serif;font-variant-numeric:tabular-nums}
+.wrap{max-width:1240px;margin:0 auto;padding-inline:20px;padding-block:28px 48px}
+header{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px 24px;margin-bottom:22px}
+h1{font-size:26px;line-height:1.15;font-weight:700;letter-spacing:-.01em;margin:0;text-wrap:balance}
+header p{margin:0;color:var(--ink-2);max-width:60ch}
+.layout{display:grid;grid-template-columns:320px minmax(0,1fr);gap:24px;align-items:start}
+@media (max-width:900px){.layout{grid-template-columns:minmax(0,1fr)}}
+
+/* inputs */
+aside{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px;display:flex;flex-direction:column;gap:20px;position:sticky;top:calc(env(safe-area-inset-top,0px) + 16px)}
+@media (max-width:900px){aside{position:static}}
+fieldset{border:0;margin:0;padding:0;display:grid;grid-template-columns:1fr 1fr;gap:12px}
+legend{grid-column:1/-1;font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:0;margin-bottom:10px}
+.f{display:flex;flex-direction:column;gap:4px;min-width:0}
+.f.full{grid-column:1/-1}
+label{font-size:13px;font-weight:500;color:var(--ink-2)}
+.in{display:flex;align-items:center;background:var(--field);border:1px solid var(--line);border-radius:7px;padding:0 10px;height:38px;transition:border-color .15s}
+.in:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.in span{color:var(--muted);font-size:14px;flex:none}
+.in input{border:0;background:transparent;color:var(--ink);font:inherit;font-variant-numeric:tabular-nums;width:100%;min-width:0;outline:none;padding:0 4px;height:100%}
+.in input::-webkit-inner-spin-button{opacity:.4}
+.hint{font-size:12px;color:var(--muted)}
+.seg{display:flex;border:1px solid var(--line);border-radius:7px;overflow:hidden;grid-column:1/-1}
+.seg button{flex:1;border:0;background:var(--field);color:var(--ink-2);font:500 13px/1 inherit;font-family:inherit;padding:10px 8px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--surface)}
+.seg button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+
+/* results */
+main{display:flex;flex-direction:column;gap:20px;min-width:0}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.stat{background:var(--surface);padding:14px 16px;display:flex;flex-direction:column;gap:2px}
+.stat .k{font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+.stat .v{font:500 22px/1.25 "IBM Plex Mono",ui-monospace,monospace;letter-spacing:-.02em;color:var(--ink)}
+.stat .d{font-size:12.5px;color:var(--ink-2)}
+.stat .d b{color:var(--good);font-weight:600}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px 18px 14px}
+.panel h2{font-size:16px;font-weight:600;margin:0 0 2px}
+.panel .sub{margin:0 0 12px;color:var(--ink-2);font-size:13.5px;max-width:70ch}
+.chart{position:relative;height:340px}
+@media (max-width:600px){.chart{height:280px}}
+details summary{cursor:pointer;font-weight:600;font-size:15px;list-style-position:inside}
+details summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
+.tbl{overflow-x:auto;margin-top:12px}
+table{border-collapse:collapse;width:100%;font-size:13px;white-space:nowrap}
+th,td{padding:7px 10px;text-align:right;border-bottom:1px solid var(--line)}
+th{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;position:sticky;top:0;background:var(--surface)}
+th:first-child,td:first-child{text-align:left}
+tr.payoff td{background:var(--accent-soft);font-weight:600}
+.note{font-size:12.5px;color:var(--muted);margin:0}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Mortgage Payoff Planner</h1>
+    <p>Model how extra principal shortens the loan, and what owning the home still costs once the mortgage is gone.</p>
+  </header>
+
+  <div class="layout">
+    <aside aria-label="Inputs">
+      <fieldset>
+        <legend>Loan</legend>
+        <div class="f full"><label for="price">Home price</label><div class="in"><span>$</span><input id="price" type="number" min="0" step="5000" value="400000"></div></div>
+        <div class="f"><label for="downAmt">Down payment</label><div class="in"><span>$</span><input id="downAmt" type="number" min="0" step="1000" value="80000"></div></div>
+        <div class="f"><label for="downPct">Down %</label><div class="in"><input id="downPct" type="number" min="0" max="100" step="0.5" value="20"><span>%</span></div></div>
+        <div class="f"><label for="rate">Interest rate</label><div class="in"><input id="rate" type="number" min="0" max="25" step="0.125" value="6.5"><span>%</span></div></div>
+        <div class="f"><label for="term">Term</label><div class="in"><input id="term" type="number" min="1" max="40" step="1" value="30"><span>yrs</span></div></div>
+        <div class="f full"><label for="start">First payment</label><div class="in"><input id="start" type="month" value="2026-11"></div></div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Extra principal</legend>
+        <div class="f"><label for="extraMo">Monthly</label><div class="in"><span>$</span><input id="extraMo" type="number" min="0" step="50" value="200"></div></div>
+        <div class="f"><label for="extraYr">Yearly lump sum</label><div class="in"><span>$</span><input id="extraYr" type="number" min="0" step="500" value="0"></div></div>
+        <p class="hint" style="grid-column:1/-1;margin:0">Lump sum is applied with the 12th payment of each loan year.</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Carrying costs</legend>
+        <div class="f"><label for="taxRate">Property tax</label><div class="in"><input id="taxRate" type="number" min="0" max="10" step="0.05" value="2.2"><span>%/yr</span></div></div>
+        <div class="f"><label for="ins">Insurance</label><div class="in"><span>$</span><input id="ins" type="number" min="0" step="100" value="3000"><span>/yr</span></div></div>
+        <div class="f"><label for="hoa">HOA</label><div class="in"><span>$</span><input id="hoa" type="number" min="0" step="5" value="75"><span>/mo</span></div></div>
+        <div class="f"><label for="infl">Inflation</label><div class="in"><input id="infl" type="number" min="0" max="15" step="0.25" value="3"><span>%/yr</span></div></div>
+        <p class="hint" style="grid-column:1/-1;margin:0">Tax is a rate on the purchase price. Tax, insurance and HOA all rise with inflation each loan year.</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>View</legend>
+        <div class="f full"><label for="horizon">Years to model</label><div class="in"><input id="horizon" type="number" min="5" max="60" step="1" value="40"><span>yrs</span></div></div>
+        <div class="seg" role="group" aria-label="Dollar basis">
+          <button type="button" id="bNom" aria-pressed="true">Future dollars</button>
+          <button type="button" id="bReal" aria-pressed="false">Today's dollars</button>
+        </div>
+      </fieldset>
+    </aside>
+
+    <main>
+      <section class="stats" id="stats" aria-label="Summary"></section>
+
+      <section class="panel">
+        <h2>Yearly housing cost</h2>
+        <p class="sub" id="sub1">What you pay each year, split into principal, interest and carrying costs. After payoff only taxes, insurance and HOA remain.</p>
+        <div class="chart"><canvas id="c1" aria-label="Stacked bar chart of yearly housing cost" role="img"></canvas></div>
+      </section>
+
+      <section class="panel">
+        <h2>Cumulative payments</h2>
+        <p class="sub">Running totals of everything paid, principal and interest, with the remaining loan balance.</p>
+        <div class="chart"><canvas id="c2" aria-label="Line chart of cumulative payments and loan balance" role="img"></canvas></div>
+      </section>
+
+      <section class="panel">
+        <details id="tblWrap">
+          <summary>Year-by-year schedule</summary>
+          <div class="tbl"><table id="tbl"></table></div>
+        </details>
+      </section>
+      <p class="note">Excludes PMI, closing costs, maintenance and home appreciation. Property tax is held to the purchase price grown by inflation, not to reassessed market value.</p>
+    </main>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const num = id => { const v = parseFloat($(id).value); return isFinite(v) ? v : 0; };
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+let real = false;
+
+const usd = (v, dec=0) => (v<0?'-':'') + '$' + Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:dec,maximumFractionDigits:dec});
+const usdK = v => Math.abs(v) >= 1e6 ? '$' + (v/1e6).toFixed(v>=1e7?0:1) + 'M' : Math.abs(v) >= 1000 ? '$' + Math.round(v/1000) + 'k' : '$' + Math.round(v);
+const ym = (y, m) => MONTHS[m] + ' ' + y;
+const durStr = mo => { const y = Math.floor(mo/12), m = mo%12; return (y? y+' yr' : '') + (y&&m?' ':'') + (m? m+' mo':'') || '0 mo'; };
+
+// down payment linkage
+$('downAmt').addEventListener('input', () => { const p = num('price'); $('downPct').value = p ? +(num('downAmt')/p*100).toFixed(2) : 0; run(); });
+$('downPct').addEventListener('input', () => { $('downAmt').value = Math.round(num('price')*num('downPct')/100); run(); });
+$('price').addEventListener('input', () => { $('downAmt').value = Math.round(num('price')*num('downPct')/100); run(); });
+['rate','term','start','extraMo','extraYr','taxRate','ins','hoa','infl','horizon'].forEach(id => $(id).addEventListener('input', run));
+$('bNom').onclick = () => { real = false; $('bNom').setAttribute('aria-pressed','true'); $('bReal').setAttribute('aria-pressed','false'); run(); };
+$('bReal').onclick = () => { real = true; $('bReal').setAttribute('aria-pressed','true'); $('bNom').setAttribute('aria-pressed','false'); run(); };
+
+function amortize(loan, rate, termYrs, extraMo, extraYr, months) {
+  const r = rate/100/12, n = Math.round(termYrs*12);
+  const pmt = loan <= 0 ? 0 : r === 0 ? loan/n : loan*r/(1-Math.pow(1+r,-n));
+  let bal = loan, rows = [], payoff = null, totInt = 0;
+  for (let m = 1; m <= months; m++) {
+    let interest = 0, principal = 0, extra = 0;
+    if (bal > 0.005) {
+      interest = bal*r;
+      principal = Math.min(pmt - interest, bal);
+      bal -= principal;
+      extra = Math.min(extraMo + (m % 12 === 0 ? extraYr : 0), bal);
+      bal -= extra;
+      totInt += interest;
+      if (bal <= 0.005) { bal = 0; payoff = m; }
+    }
+    rows.push({m, interest, principal: principal + extra, extra, bal});
+  }
+  return {pmt, rows, payoff, totInt};
+}
+
+function run() {
+  const price = num('price'), down = Math.min(num('downAmt'), price), loan = Math.max(price - down, 0);
+  const rate = num('rate'), term = Math.max(num('term'),1);
+  const infl = num('infl')/100;
+  const horizon = Math.max(Math.round(num('horizon')), 1);
+  const [sy, sm] = ($('start').value || '2026-11').split('-').map(Number);
+  const months = Math.max(horizon, term)*12 + 12;
+
+  const plan = amortize(loan, rate, term, num('extraMo'), num('extraYr'), months);
+  const base = amortize(loan, rate, term, 0, 0, months);
+  const pmt = plan.pmt;
+
+  // yearly aggregation (loan years)
+  const years = [];
+  let cum = {total:0, principal:0, interest:0};
+  for (let y = 0; y < horizon; y++) {
+    const f = Math.pow(1+infl, y);          // cost growth for this loan year
+    const d = real ? f : 1;                  // deflator for today's dollars
+    const row = {y: y+1, principal:0, interest:0, tax:0, ins:0, hoa:0, bal:0};
+    for (let k = 0; k < 12; k++) {
+      const r = plan.rows[y*12 + k];
+      row.principal += r.principal/d; row.interest += r.interest/d;
+      row.tax += price*num('taxRate')/100*f/12/d;
+      row.ins += num('ins')*f/12/d;
+      row.hoa += num('hoa')*f/d;
+      row.bal = r.bal/d;
+    }
+    row.total = row.principal + row.interest + row.tax + row.ins + row.hoa;
+    cum.total += row.total; cum.principal += row.principal; cum.interest += row.interest;
+    row.cTotal = cum.total; row.cPrincipal = cum.principal; row.cInterest = cum.interest;
+    const smIdx = (sm-1 + y*12);
+    row.span = ym(sy + Math.floor(smIdx/12), smIdx%12) + ' – ' + ym(sy + Math.floor((smIdx+11)/12), (smIdx+11)%12);
+    years.push(row);
+  }
+
+  // stats
+  const m1 = { tax: price*num('taxRate')/100/12, ins: num('ins')/12, hoa: num('hoa') };
+  const month1 = pmt + num('extraMo') + m1.tax + m1.ins + m1.hoa;
+  const po = plan.payoff, bpo = base.payoff;
+  const poIdx = po ? sm-1 + po-1 : null;
+  const poLabel = po ? ym(sy + Math.floor(poIdx/12), poIdx%12) : 'Not paid off';
+  const saved = po && bpo ? bpo - po : 0;
+  const poYear = po ? Math.ceil(po/12) : null; // loan year of payoff
+  const fAfter = po ? Math.pow(1+infl, Math.floor(po/12)) : 1; // first month after payoff
+  const afterNom = (m1.tax + m1.ins + m1.hoa) * fAfter;
+  const afterShown = real ? afterNom / fAfter : afterNom;
+
+  $('stats').innerHTML = [
+    ['Principal & interest', usd(pmt), `${usd(loan)} loan at ${rate}% for ${term} yrs`],
+    ['First-month total', usd(month1), `incl. ${usd(num('extraMo'))} extra + ${usd(m1.tax+m1.ins+m1.hoa)} tax/ins/HOA`],
+    ['Paid off', poLabel, po ? `${durStr(po)}` + (saved > 0 ? ` · <b>${durStr(saved)} early</b>` : '') : 'Increase term or payment'],
+    ['Total interest', usd(plan.totInt), base.totInt - plan.totInt > 1 ? `<b>${usd(base.totInt - plan.totInt)} saved</b> vs. no extra` : 'No extra principal'],
+    ['Monthly cost after payoff', po ? usd(afterShown) : '—', po ? (real ? `in today's dollars` : `in ${poLabel.split(' ')[1]} dollars · ${usd(m1.tax+m1.ins+m1.hoa)} today`) : ''],
+  ].map(([k,v,d]) => `<div class="stat"><span class="k">${k}</span><span class="v">${v}</span><span class="d">${d}</span></div>`).join('');
+
+  $('sub1').textContent = `What you pay each loan year${real ? ", in today's dollars" : ''}, split into principal, interest and carrying costs. After payoff only taxes, insurance and HOA remain.`;
+
+  draw(years, poYear, poLabel);
+  table(years, poYear);
+}
+
+// ---- charts ----
+let c1, c2;
+const FF = '"Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif';
+Chart.defaults.font.family = FF;
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+const payoffLine = {
+  id: 'payoffLine',
+  afterDatasetsDraw(chart, _a, opts) {
+    if (!opts.index && opts.index !== 0) return;
+    const x = chart.scales.x.getPixelForValue(opts.index);
+    const {top, bottom} = chart.chartArea, ctx = chart.ctx;
+    ctx.save();
+    ctx.strokeStyle = opts.color; ctx.lineWidth = 1; ctx.setLineDash([4,4]);
+    ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, bottom); ctx.stroke();
+    ctx.setLineDash([]); ctx.fillStyle = opts.color;
+    ctx.font = '600 12px "Public Sans", system-ui, sans-serif';
+    const label = 'Paid off ' + opts.label;
+    const w = ctx.measureText(label).width;
+    const lx = x + 6 + w > chart.chartArea.right ? x - 6 - w : x + 6;
+    ctx.fillText(label, lx, top + 12);
+    ctx.restore();
+  }
+};
+
+function baseOpts(poYear, poLabel) {
+  const ink2 = css('--ink-2'), muted = css('--muted'), line = css('--line');
+  return {
+    responsive: true, maintainAspectRatio: false, animation: false,
+    interaction: {mode: 'index', intersect: false},
+    plugins: {
+      legend: {position: 'top', align: 'start', labels: {color: ink2, boxWidth: 12, boxHeight: 12, useBorderRadius: true, borderRadius: 3, padding: 14, font: {family: FF, size: 12.5}}},
+      tooltip: {
+        backgroundColor: css('--surface'), titleColor: css('--ink'), bodyColor: ink2, footerColor: css('--ink'),
+        borderColor: line, borderWidth: 1, padding: 10, boxPadding: 4, usePointStyle: true,
+        titleFont: {family: FF, weight: '600'}, bodyFont: {family: FF}, footerFont: {family: FF, weight: '600'},
+        callbacks: {label: c => ` ${c.dataset.label}: ${usd(c.parsed.y)}`}
+      },
+      payoffLine: {index: poYear ? poYear - 1 : null, label: poLabel, color: ink2}
+    },
+    scales: {
+      x: {grid: {display: false}, border: {color: line}, ticks: {color: muted, font: {family: FF, size: 12}, maxRotation: 0, autoSkipPadding: 10}},
+      y: {grid: {color: line}, border: {display: false}, ticks: {color: muted, font: {family: FF, size: 12}, callback: v => usdK(v), maxTicksLimit: 6}, beginAtZero: true}
+    }
+  };
+}
+
+function draw(years, poYear, poLabel) {
+  const labels = years.map(r => 'Yr ' + r.y);
+  const surface = css('--surface');
+  const bar = (label, key, color) => ({label, data: years.map(r => r[key]), backgroundColor: color, borderColor: surface, borderWidth: {top: 2}, borderSkipped: false, borderRadius: 0, stack: 's', barPercentage: .82, categoryPercentage: 1, pointStyle: 'rectRounded'});
+  const o1 = baseOpts(poYear, poLabel);
+  o1.scales.x.stacked = true; o1.scales.y.stacked = true;
+  o1.plugins.tooltip.callbacks.title = items => `Year ${years[items[0].dataIndex].y} · ${years[items[0].dataIndex].span}`;
+  o1.plugins.tooltip.callbacks.footer = items => 'Total: ' + usd(items.reduce((s,i) => s + i.parsed.y, 0));
+  o1.plugins.tooltip.itemSort = (a, b) => b.datasetIndex - a.datasetIndex;
+  const d1 = [
+    bar('Principal', 'principal', css('--s-principal')),
+    bar('Interest', 'interest', css('--s-interest')),
+    bar('Property tax', 'tax', css('--s-tax')),
+    bar('Insurance', 'ins', css('--s-ins')),
+    bar('HOA', 'hoa', css('--s-hoa')),
+  ];
+  const ln = (label, key, color, dash) => ({label, data: years.map(r => r[key]), borderColor: color, backgroundColor: color, borderWidth: 2, borderDash: dash || [], pointRadius: 0, pointHoverRadius: 5, pointHoverBorderColor: surface, pointHoverBorderWidth: 2, tension: .15, pointStyle: 'circle'});
+  const o2 = baseOpts(poYear, poLabel);
+  o2.plugins.tooltip.callbacks.title = items => `End of year ${years[items[0].dataIndex].y}`;
+  const d2 = [
+    ln('Total paid (all costs)', 'cTotal', css('--s-total')),
+    ln('Principal paid', 'cPrincipal', css('--s-principal')),
+    ln('Interest paid', 'cInterest', css('--s-interest')),
+    ln('Loan balance', 'bal', css('--s-balance'), [6,4]),
+  ];
+  if (c1) { c1.data.labels = labels; c1.data.datasets = d1; c1.options = o1; c1.update(); }
+  else c1 = new Chart($('c1'), {type: 'bar', data: {labels, datasets: d1}, options: o1, plugins: [payoffLine]});
+  if (c2) { c2.data.labels = labels; c2.data.datasets = d2; c2.options = o2; c2.update(); }
+  else c2 = new Chart($('c2'), {type: 'line', data: {labels, datasets: d2}, options: o2, plugins: [payoffLine]});
+}
+
+function table(years, poYear) {
+  const h = ['Year','Dates','Principal','Interest','Property tax','Insurance','HOA','Total','Balance'];
+  $('tbl').innerHTML = '<thead><tr>' + h.map(x => `<th scope="col">${x}</th>`).join('') + '</tr></thead><tbody>' +
+    years.map(r => `<tr${r.y === poYear ? ' class="payoff"' : ''}><td>${r.y}</td><td style="text-align:left">${r.span}</td><td>${usd(r.principal)}</td><td>${usd(r.interest)}</td><td>${usd(r.tax)}</td><td>${usd(r.ins)}</td><td>${usd(r.hoa)}</td><td>${usd(r.total)}</td><td>${usd(r.bal)}</td></tr>`).join('') + '</tbody>';
+}
+
+// redraw on theme change
+const redraw = () => { c1 && c1.destroy(); c2 && c2.destroy(); c1 = c2 = null; run(); };
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', redraw);
+new MutationObserver(redraw).observe(document.documentElement, {attributes: true, attributeFilter: ['data-theme']});
+
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => c1 && redraw());
+run();
+</script>
+
+</body></html>

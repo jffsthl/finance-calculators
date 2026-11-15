@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Future Value Calculator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="shared.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Future Value</h1>
+    <p>See what a starting balance and regular savings grow to at a steady rate of return, how much of the result is growth, and what it's worth in today's dollars.</p>
+  </header>
+
+  <div class="layout">
+    <aside aria-label="Inputs">
+      <fieldset>
+        <legend>Savings</legend>
+        <div class="f full"><label for="pv">Starting balance</label><div class="in"><span>$</span><input id="pv" type="number" min="0" step="1000" value="25000"></div></div>
+        <div class="f"><label for="pmt">Monthly contribution</label><div class="in"><span>$</span><input id="pmt" type="number" min="0" step="50" value="500"></div></div>
+        <div class="f"><label for="step">Raise each year</label><div class="in"><input id="step" type="number" min="0" max="25" step="0.5" value="3"><span>%</span></div></div>
+        <div class="seg" role="group" aria-label="Contribution timing">
+          <button type="button" id="tBeg" aria-pressed="false">Start of month</button>
+          <button type="button" id="tEnd" aria-pressed="true">End of month</button>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Growth</legend>
+        <div class="f"><label for="ret">Annual return</label><div class="in"><input id="ret" type="number" min="-20" max="30" step="0.25" value="7"><span>%</span></div></div>
+        <div class="f"><label for="fee">Annual fees</label><div class="in"><input id="fee" type="number" min="0" max="5" step="0.05" value="0"><span>%</span></div></div>
+        <div class="f"><label for="yrs">Years</label><div class="in"><input id="yrs" type="number" min="1" max="70" step="1" value="25"><span>yrs</span></div></div>
+        <div class="f"><label for="infl">Inflation</label><div class="in"><input id="infl" type="number" min="0" max="15" step="0.25" value="3"><span>%</span></div></div>
+        <p class="hint">Return is an annual rate compounded monthly. Fees come off the return each year.</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Goal (optional)</legend>
+        <div class="f full"><label for="goal">Target amount</label><div class="in"><span>$</span><input id="goal" type="number" min="0" step="10000" value="0"></div></div>
+        <div class="seg" role="group" aria-label="Goal basis">
+          <button type="button" id="gNom" aria-pressed="true">Future dollars</button>
+          <button type="button" id="gReal" aria-pressed="false">Today's dollars</button>
+        </div>
+        <p class="hint">Set a target to see the monthly contribution needed to reach it.</p>
+      </fieldset>
+
+      <button type="button" class="reset" id="reset">Reset to defaults</button>
+    </aside>
+
+    <main>
+      <section class="stats" id="stats" aria-label="Summary"></section>
+      <div id="goalBox" hidden></div>
+
+      <section class="panel">
+        <h2>Balance by year</h2>
+        <p class="sub">Each bar splits the balance into what you put in and what it earned.</p>
+        <div class="chart"><canvas id="c1" role="img" aria-label="Stacked bar chart of contributions and growth by year"></canvas></div>
+      </section>
+
+      <section class="panel">
+        <details>
+          <summary>Year-by-year table</summary>
+          <div class="tbl"><table id="tbl"></table></div>
+        </details>
+      </section>
+      <p class="note">Assumes a constant return every month. Real returns vary year to year, and the order of good and bad years changes the result. Taxes are not included.</p>
+    </main>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const num = id => { const v = parseFloat($(id).value); return isFinite(v) ? v : 0; };
+const usd = (v, d = 0) => (v < 0 ? "-" : "") + "$" + Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+const usdK = v => Math.abs(v) >= 1e6 ? "$" + (v / 1e6).toFixed(Math.abs(v) >= 1e7 ? 0 : 1) + "M" : Math.abs(v) >= 1000 ? "$" + Math.round(v / 1000) + "k" : "$" + Math.round(v);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const FIELDS = ["pv", "pmt", "step", "ret", "fee", "yrs", "infl", "goal"];
+const DEFAULTS = Object.fromEntries(FIELDS.map(k => [k, $(k).value]));
+const KEY = "calc-future-value";
+let begin = false, goalReal = false;
+
+function setSeg(a, b, on) { $(a).setAttribute("aria-pressed", on); $(b).setAttribute("aria-pressed", !on); }
+$("tBeg").onclick = () => { begin = true; setSeg("tBeg", "tEnd", true); run(); };
+$("tEnd").onclick = () => { begin = false; setSeg("tBeg", "tEnd", false); run(); };
+$("gNom").onclick = () => { goalReal = false; setSeg("gNom", "gReal", true); run(); };
+$("gReal").onclick = () => { goalReal = true; setSeg("gNom", "gReal", false); run(); };
+FIELDS.forEach(k => $(k).addEventListener("input", run));
+$("reset").onclick = () => { FIELDS.forEach(k => $(k).value = DEFAULTS[k]); begin = false; goalReal = false; setSeg("tBeg", "tEnd", false); setSeg("gNom", "gReal", true); run(); };
+
+try {
+  const s = JSON.parse(localStorage.getItem(KEY) || "null");
+  if (s) { FIELDS.forEach(k => { if (s[k] != null) $(k).value = s[k]; }); begin = !!s.begin; goalReal = !!s.goalReal; setSeg("tBeg", "tEnd", begin); setSeg("gNom", "gReal", !goalReal); }
+} catch (e) {}
+
+// Simulate month by month. pmtScale lets us reuse this to solve for the contribution needed.
+function simulate(pv, pmt, stepPct, retPct, feePct, years, pmtScale = 1) {
+  const net = (1 + retPct / 100) * (1 - feePct / 100) - 1;           // annual net return
+  const r = net <= -1 ? -1 : Math.pow(1 + net, 1 / 12) - 1;           // monthly rate, effective-annual consistent
+  let bal = pv, contrib = pv, rows = [];
+  for (let y = 0; y < years; y++) {
+    const c = pmt * pmtScale * Math.pow(1 + stepPct / 100, y);
+    let yContrib = 0;
+    for (let m = 0; m < 12; m++) {
+      if (begin) { bal += c; yContrib += c; }
+      bal *= 1 + r;
+      if (!begin) { bal += c; yContrib += c; }
+    }
+    contrib += yContrib;
+    rows.push({ y: y + 1, monthly: c, yContrib, contrib, bal, growth: bal - contrib });
+  }
+  return { rows, fv: bal, contrib, net };
+}
+
+function run() {
+  const pv = num("pv"), pmt = num("pmt"), step = num("step"), ret = num("ret"), fee = num("fee");
+  const yrs = Math.min(Math.max(Math.round(num("yrs")), 1), 70), infl = num("infl") / 100;
+  const s = simulate(pv, pmt, step, ret, fee, yrs);
+  const defl = Math.pow(1 + infl, yrs);
+  const growth = s.fv - s.contrib;
+
+  $("stats").innerHTML = [
+    ["Future value", usd(s.fv), `after ${yrs} years`],
+    ["In today's dollars", usd(s.fv / defl), `at ${num("infl")}% inflation`],
+    ["Total contributed", usd(s.contrib), `${usd(pv)} start + ${usd(s.contrib - pv)} added`],
+    ["Growth earned", usd(growth), s.fv > 0 ? `${Math.round(growth / s.fv * 100)}% of the ending balance` : ""],
+  ].map(([k, v, d]) => `<div class="stat"><span class="k">${k}</span><span class="v">${v}</span><span class="d">${d}</span></div>`).join("");
+
+  // goal solve: FV is linear in the contribution, so two runs give the answer exactly
+  const goalIn = num("goal");
+  const box = $("goalBox");
+  if (goalIn > 0) {
+    const target = goalReal ? goalIn * defl : goalIn;
+    const a = simulate(pv, pmt, step, ret, fee, yrs, 0).fv;
+    const b = simulate(pv, 1, step, ret, fee, yrs, 1).fv - a;
+    const need = b > 0 ? Math.max((target - a) / b, 0) : NaN;
+    const ok = s.fv >= target;
+    box.hidden = false;
+    box.className = "callout " + (ok ? "good" : "bad");
+    const tgtTxt = goalReal ? `${usd(goalIn)} in today's dollars (${usd(target)} in year-${yrs} dollars)` : usd(target);
+    box.innerHTML = isFinite(need)
+      ? (need === 0
+          ? `The starting balance alone reaches <b>${tgtTxt}</b> with no contributions.`
+          : `To reach <b>${tgtTxt}</b>, start at <b>${usd(need)}/month</b>${step ? `, raised ${step}% each year` : ""}. ` +
+            (ok ? `You're on pace, with ${usd(s.fv - target)} to spare.` : `That's ${usd(need - pmt)}/month more than you entered.`))
+      : `Can't solve for a contribution with these inputs.`;
+  } else box.hidden = true;
+
+  draw(s.rows);
+  $("tbl").innerHTML = "<thead><tr>" + ["Year", "Monthly", "Added this year", "Total contributed", "Growth", "Balance", "Today's $"].map(h => `<th scope="col">${h}</th>`).join("") + "</tr></thead><tbody>" +
+    s.rows.map(r => `<tr><td>${r.y}</td><td>${usd(r.monthly)}</td><td>${usd(r.yContrib)}</td><td>${usd(r.contrib)}</td><td>${usd(r.growth)}</td><td>${usd(r.bal)}</td><td>${usd(r.bal / Math.pow(1 + infl, r.y))}</td></tr>`).join("") + "</tbody>";
+
+  try { localStorage.setItem(KEY, JSON.stringify({ ...Object.fromEntries(FIELDS.map(k => [k, $(k).value])), begin, goalReal })); } catch (e) {}
+}
+
+let chart;
+const FF = '"Public Sans", system-ui, sans-serif';
+function draw(rows) {
+  const labels = rows.map(r => "Yr " + r.y), line = css("--line"), muted = css("--muted"), surface = css("--surface");
+  const ds = [
+    { label: "Contributions", data: rows.map(r => r.contrib), backgroundColor: css("--s1") },
+    { label: "Growth", data: rows.map(r => Math.max(r.growth, 0)), backgroundColor: css("--s2") },
+  ].map(d => ({ ...d, stack: "s", borderColor: surface, borderWidth: { top: 2 }, borderSkipped: false, barPercentage: .85, categoryPercentage: 1 }));
+  const opts = {
+    responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: "index", intersect: false },
+    plugins: {
+      legend: { position: "top", align: "start", labels: { color: css("--ink-2"), boxWidth: 12, boxHeight: 12, font: { family: FF } } },
+      tooltip: { backgroundColor: surface, titleColor: css("--ink"), bodyColor: css("--ink-2"), footerColor: css("--ink"), borderColor: line, borderWidth: 1, padding: 10,
+        titleFont: { family: FF, weight: "600" }, bodyFont: { family: FF }, footerFont: { family: FF, weight: "600" },
+        callbacks: { title: i => "End of year " + rows[i[0].dataIndex].y, label: c => ` ${c.dataset.label}: ${usd(c.parsed.y)}`, footer: i => "Balance: " + usd(rows[i[0].dataIndex].bal) } }
+    },
+    scales: {
+      x: { stacked: true, grid: { display: false }, border: { color: line }, ticks: { color: muted, font: { family: FF }, maxRotation: 0, autoSkipPadding: 10 } },
+      y: { stacked: true, beginAtZero: true, grid: { color: line }, border: { display: false }, ticks: { color: muted, font: { family: FF }, callback: v => usdK(v), maxTicksLimit: 6 } }
+    }
+  };
+  if (chart) { chart.data.labels = labels; chart.data.datasets = ds; chart.options = opts; chart.update(); }
+  else chart = new Chart($("c1"), { type: "bar", data: { labels, datasets: ds }, options: opts });
+}
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { chart && chart.destroy(); chart = null; run(); });
+run();
+</script>
+</body>
+</html>

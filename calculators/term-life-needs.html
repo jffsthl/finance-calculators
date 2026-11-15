@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Declining Term Needs Calculator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Layout idea: planner's worksheet. Inputs in a left rail, summary tiles, then the year-by-year chart, then policy terms and costs. */
+:root {
+  color-scheme: light;
+  --page: #f4f5f3;
+  --surface: #fcfcfb;
+  --ink: #0f1513;
+  --ink-2: #4c5450;
+  --muted: #858b87;
+  --line: #e1e3de;
+  --axis: #c3c6bf;
+  --accent: #1f5f8b;
+  --accent-wash: rgba(31,95,139,0.08);
+  --series-1: #2a78d6;  /* insurance need */
+  --series-2: #eb6834;  /* liquid net worth */
+  --overlay: #0f1513;   /* coverage line */
+  --good: #006300;
+  --critical: #c23535;
+  --font-display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0f1110;
+    --surface: #1a1b1a;
+    --ink: #eef0ec;
+    --ink-2: #c0c4bd;
+    --muted: #8d928c;
+    --line: #2c2e2c;
+    --axis: #3b3e3b;
+    --accent: #6fb0e0;
+    --accent-wash: rgba(111,176,224,0.10);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --overlay: #eef0ec;
+    --good: #2bb02b;
+    --critical: #e66767;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0f1110;
+  --surface: #1a1b1a;
+  --ink: #eef0ec;
+  --ink-2: #c0c4bd;
+  --muted: #8d928c;
+  --line: #2c2e2c;
+  --axis: #3b3e3b;
+  --accent: #6fb0e0;
+  --accent-wash: rgba(111,176,224,0.10);
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --overlay: #eef0ec;
+  --good: #2bb02b;
+  --critical: #e66767;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--page); color: var(--ink); font: 14px/1.45 var(--font-body); }
+h1, h2, h3 { font-family: var(--font-display); font-weight: 600; text-wrap: balance; margin: 0; }
+h1 { font-size: 26px; letter-spacing: -0.01em; }
+h2 { font-size: 17px; }
+h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-2); font-weight: 600; }
+.wrap { max-width: 1320px; margin: 0 auto; padding: 24px 20px 48px; display: grid; gap: 20px; }
+header p { margin: 6px 0 0; color: var(--ink-2); max-width: 72ch; }
+.layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+aside.card { display: grid; gap: 18px; position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; }
+@media (max-width: 900px) { aside.card { position: static; max-height: none; } }
+fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 8px; }
+legend { padding: 0; margin-bottom: 4px; }
+.field { display: grid; grid-template-columns: 1fr 118px; align-items: center; gap: 8px; }
+.field label { color: var(--ink-2); font-size: 13px; }
+.inbox { display: flex; align-items: center; border: 1px solid var(--axis); border-radius: 6px; background: var(--page); padding: 0 8px; height: 32px; }
+.inbox:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-wash); }
+.inbox span { color: var(--muted); font-size: 12px; font-family: var(--font-mono); }
+.inbox input, .inbox select { width: 100%; border: 0; background: transparent; color: var(--ink); font: 13px var(--font-mono); text-align: right; outline: none; padding: 0 4px; font-variant-numeric: tabular-nums; }
+.inbox select { text-align: left; }
+.hint { font-size: 12px; color: var(--muted); margin: 0; }
+.seg { display: inline-flex; border: 1px solid var(--axis); border-radius: 7px; overflow: hidden; background: var(--page); }
+.seg button { border: 0; background: transparent; color: var(--ink-2); font: 500 12px var(--font-body); padding: 6px 10px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--axis); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--surface); }
+.seg button:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.seg.full { display: flex; } .seg.full button { flex: 1; }
+.check { display: flex; gap: 8px; align-items: center; color: var(--ink-2); font-size: 13px; cursor: pointer; }
+.check input { accent-color: var(--accent); width: 15px; height: 15px; }
+.hidden { display: none !important; }
+main { display: grid; gap: 20px; min-width: 0; }
+.tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 1100px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 420px) { .tiles { grid-template-columns: 1fr; } }
+.tile { display: grid; gap: 4px; align-content: start; }
+.tile .label { font-size: 12px; color: var(--ink-2); }
+.tile .value { font: 600 24px/1.1 var(--font-display); }
+.tile .sub { font-size: 12px; color: var(--muted); }
+.chart-head { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--ink-2); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+.legend i.line { height: 2px; width: 16px; border-radius: 1px; vertical-align: 3px; background: var(--overlay); }
+#chart { position: relative; width: 100%; }
+#chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+#chart text { font-family: var(--font-mono); font-size: 11px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+.tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,0.12); padding: 10px 12px; font-size: 12px; min-width: 200px; z-index: 5; }
+.tip b { font-family: var(--font-display); font-size: 14px; display: block; margin-bottom: 4px; }
+.tip .r { display: flex; justify-content: space-between; gap: 16px; color: var(--ink-2); }
+.tip .r span:last-child { font-family: var(--font-mono); color: var(--ink); font-variant-numeric: tabular-nums; }
+.tip i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; }
+.policies { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 1100px) { .policies { grid-template-columns: 1fr; } }
+.policy { display: grid; gap: 10px; align-content: start; }
+.policy .tag { justify-self: start; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 8px; border-radius: 99px; background: var(--accent-wash); color: var(--accent); }
+.policy .tag.best { background: color-mix(in srgb, var(--good) 14%, transparent); color: var(--good); }
+dl { margin: 0; display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; }
+dt { color: var(--ink-2); font-size: 13px; }
+dd { margin: 0; font-family: var(--font-mono); font-size: 13px; text-align: right; font-variant-numeric: tabular-nums; }
+.note { font-size: 12px; color: var(--ink-2); margin: 0; padding: 8px 10px; border-left: 3px solid var(--axis); background: var(--page); border-radius: 0 6px 6px 0; }
+.note.warn { border-left-color: var(--critical); }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { padding: 7px 10px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th { font-weight: 600; color: var(--ink-2); font-size: 12px; }
+td { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+td:first-child { font-family: var(--font-body); }
+tr.best td { background: color-mix(in srgb, var(--good) 7%, transparent); }
+tr.zero td { color: var(--muted); }
+details summary { cursor: pointer; font: 600 15px var(--font-display); }
+.row-actions { display: flex; gap: 10px; align-items: center; margin: 12px 0; flex-wrap: wrap; }
+.btn { border: 1px solid var(--axis); background: var(--page); color: var(--ink); border-radius: 7px; padding: 6px 12px; font: 500 13px var(--font-body); cursor: pointer; }
+.btn:hover { border-color: var(--accent); }
+.status { font-size: 12px; color: var(--good); }
+.method p { margin: 0 0 8px; color: var(--ink-2); max-width: 80ch; }
+.method p:last-child { margin: 0; }
+@media (prefers-reduced-motion: no-preference) { .seg button, .btn { transition: background .12s, border-color .12s; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Declining Term Needs Calculator</h1>
+    <p>Projects liquid net worth against the life insurance need each year until retirement, then sizes a declining term policy, a term ladder and a level term policy that each cover the need, and compares their premiums.</p>
+  </header>
+
+  <div class="layout">
+    <aside class="card" id="inputs" aria-label="Assumptions"></aside>
+
+    <main>
+      <section class="tiles" id="tiles" aria-label="Summary"></section>
+
+      <section class="card" aria-labelledby="chart-title">
+        <div class="chart-head">
+          <div>
+            <h2 id="chart-title">Insurance need vs. liquid net worth, by age</h2>
+            <div class="legend" id="legend" style="margin-top:6px"></div>
+          </div>
+          <div class="controls">
+            <div class="seg" role="group" aria-label="Bar layout" id="barMode">
+              <button type="button" data-v="grouped" aria-pressed="true">Side by side</button>
+              <button type="button" data-v="stacked" aria-pressed="false">Stacked</button>
+            </div>
+            <div class="seg" role="group" aria-label="Coverage line" id="overlay">
+              <button type="button" data-v="dec" aria-pressed="true">Declining</button>
+              <button type="button" data-v="lad" aria-pressed="false">Ladder</button>
+              <button type="button" data-v="lvl" aria-pressed="false">Level</button>
+              <button type="button" data-v="none" aria-pressed="false">None</button>
+            </div>
+            <label class="check"><input type="checkbox" id="zoom"> Zoom to coverage</label>
+          </div>
+        </div>
+        <div id="chart"></div>
+      </section>
+
+      <section class="policies" id="policies" aria-label="Policy structures"></section>
+
+      <section class="card" aria-labelledby="cmp-title">
+        <h2 id="cmp-title" style="margin-bottom:10px">Premium comparison</h2>
+        <div class="tablewrap"><table id="cmp"></table></div>
+        <p class="hint" style="margin-top:10px" id="cmpHint"></p>
+      </section>
+
+      <section class="card">
+        <details id="yearly">
+          <summary>Year-by-year table</summary>
+          <div class="row-actions">
+            <button type="button" class="btn" id="copyMd">Copy summary + table as Markdown</button>
+            <span class="status" id="copyStatus" aria-live="polite"></span>
+          </div>
+          <div class="tablewrap"><table id="yr"></table></div>
+        </details>
+      </section>
+
+      <section class="card method">
+        <h2 style="margin-bottom:8px">How it's calculated</h2>
+        <p><b>Liquid net worth</b> grows each year at the rate of return, plus that year's savings (savings rate × gross income, added at year end). Income grows at the income growth rate. All figures are nominal.</p>
+        <p><b>Income multiple:</b> need = multiple × that year's income + lump-sum needs − liquid net worth. <b>Human life value:</b> need = present value of the income replacement share of every remaining paycheck until retirement, discounted at the HLV discount rate, + lump-sum needs − liquid net worth. Need never goes below $0.</p>
+        <p><b>Declining term</b> starts at the peak need (rounded up). With auto-fit on, it searches every possible level period and picks the one, with the fastest decline that still covers each year, that buys the fewest coverage-dollar-years. The premium is modeled as level, based on the starting face, which is how most declining term is sold. <b>Ladder</b> tests every combination of up to the chosen number of 10/15/20/25/30-year policies and keeps the cheapest that covers every year. Ladder and level policies are assumed to be cancelled once the client is self-insured.</p>
+        <p>The premium rates are placeholders. Swap in real quotes for the client's age, health class and face band; the break-even rate in the comparison tells you what a declining term quote has to beat.</p>
+      </section>
+    </main>
+  </div>
+</div>
+
+<script>
+// ===== MODEL (pure functions) =====
+const TERMS = [10, 15, 20, 25, 30];
+
+function roundUp(x, step) { return step > 0 ? Math.ceil(x / step - 1e-9) * step : x; }
+
+function project(p) {
+  const N = Math.max(0, Math.round(p.retAge - p.age));
+  const rows = [];
+  let lnw = p.lnw0;
+  for (let i = 0; i <= N; i++) {
+    const income = p.income * Math.pow(1 + p.g, i);
+    rows.push({ i, age: p.age + i, income, lnw, saved: p.save * income });
+    lnw = lnw * (1 + p.r) + p.save * income;
+  }
+  const addons = p.debts + p.college + p.finalExp;
+  for (let i = 0; i <= N; i++) {
+    const row = rows[i];
+    let base;
+    if (p.method === 'hlv') {
+      let pv = 0;
+      for (let k = i; k < N; k++) pv += p.repl * rows[k].income / Math.pow(1 + p.disc, k - i);
+      base = pv;
+    } else {
+      base = p.mult * row.income;
+    }
+    row.target = base + addons;
+    row.need = Math.max(0, row.target - row.lnw);
+  }
+  // T = number of policy years with coverage required (years 0..T-1, before retirement)
+  let T = 0;
+  for (let i = 0; i < N; i++) if (rows[i].need > 0) T = i + 1;
+  const gapAtRet = rows[N] ? rows[N].need : 0;
+  return { rows, N, T, gapAtRet };
+}
+
+function excessPct(cov, needs, T) {
+  let ex = 0, nd = 0;
+  for (let k = 0; k < T; k++) { ex += Math.max(0, cov[k] - needs[k]); nd += needs[k]; }
+  return nd > 0 ? ex / nd : 0;
+}
+function shortfalls(cov, needs, T) {
+  const out = [];
+  for (let k = 0; k < T; k++) if (cov[k] + 0.5 < needs[k]) out.push(k);
+  return out;
+}
+
+function declining(proj, p) {
+  const { rows, T } = proj;
+  const needs = rows.slice(0, T).map(r => r.need);
+  if (T === 0) return null;
+  const peak = Math.max(...needs);
+  const F0 = Math.max(p.minFace, roundUp(peak, p.roundTo));
+  // coverage in policy year k with level period L and decline rate d
+  const covAt = (k, L, d) => {
+    const n = Math.max(0, k - L);
+    return p.shape === 'pct' ? F0 * Math.pow(1 - d, n) : Math.max(0, F0 - d * n);
+  };
+  // fastest decline (for a given level period L) that still covers every year
+  const fitRate = (L) => {
+    let d = p.shape === 'pct' ? 1 : Infinity, b = -1;
+    for (let k = L + 1; k < T; k++) {
+      const n = k - L;
+      const dk = p.shape === 'pct'
+        ? (needs[k] <= 0 ? 1 : 1 - Math.pow(needs[k] / F0, 1 / n))
+        : (F0 - needs[k]) / n;
+      if (dk < d) { d = dk; b = k; }
+    }
+    if (b < 0) d = 0;
+    d = p.shape === 'pct' ? Math.max(0, Math.floor(d * 1000) / 1000) : Math.max(0, Math.floor(d / 1000) * 1000);
+    return { d, b };
+  };
+  const covSum = (L, d) => { let s = 0; for (let k = 0; k < T; k++) s += covAt(k, L, d); return s; };
+
+  let L, rate, binding = -1;
+  if (p.autoDecline) {
+    let bestS = Infinity;
+    for (let l = 0; l < T; l++) {
+      // level period is only allowed while it still covers (F0 >= peak, always true)
+      const { d, b } = fitRate(l);
+      const s = covSum(l, d);
+      if (s < bestS - 1) { bestS = s; L = l; rate = d; binding = b; }
+    }
+  } else {
+    L = Math.max(0, Math.min(T - 1, Math.round(p.manualLevel)));
+    rate = p.shape === 'pct' ? p.manualPct : p.manualDollar;
+  }
+  const cov = [];
+  for (let k = 0; k <= proj.N; k++) cov.push(k >= T ? 0 : covAt(k, L, rate));
+  const annual = F0 / 1000 * p.rateDecl;
+  return {
+    F0, rate, L, shape: p.shape, T, binding, cov, endFace: cov[T - 1],
+    covYears: cov.reduce((s, c) => s + c, 0),
+    annual, total: annual * T, years: T,
+    excess: excessPct(cov, needs, T), short: shortfalls(cov, needs, T)
+  };
+}
+
+function levelTerm(proj, p, F0) {
+  const { T } = proj;
+  if (T === 0) return null;
+  const D = TERMS.find(t => t >= T) || 30;
+  const cov = [];
+  for (let k = 0; k <= proj.N; k++) cov.push(k < Math.min(T, D) ? F0 : 0);
+  const annual = F0 / 1000 * p.rates[D];
+  const needs = proj.rows.slice(0, T).map(r => r.need);
+  return {
+    face: F0, D, cov, annual,
+    totalCancel: annual * Math.min(T, D), yearsCancel: Math.min(T, D),
+    totalFull: annual * D,
+    excess: excessPct(cov, needs, T), short: shortfalls(cov, needs, T)
+  };
+}
+
+function subsets(arr, maxSize) {
+  const out = [];
+  const n = arr.length;
+  for (let mask = 1; mask < (1 << n); mask++) {
+    const s = arr.filter((_, j) => mask & (1 << j));
+    if (s.length <= maxSize) out.push(s);
+  }
+  return out;
+}
+
+function ladder(proj, p) {
+  const { rows, T } = proj;
+  if (T === 0) return null;
+  const needs = rows.slice(0, T).map(r => r.need);
+  const reach = Math.min(T, 30);
+  const maxNeed = (a, b) => { let m = 0; for (let k = a; k < Math.min(b, T); k++) m = Math.max(m, needs[k]); return m; };
+  let best = null;
+  for (const set of subsets(TERMS, p.maxPolicies)) {
+    if (set[set.length - 1] < reach) continue;
+    const faces = new Array(set.length).fill(0);
+    let above = 0;
+    for (let j = set.length - 1; j >= 0; j--) {
+      const lo = j > 0 ? set[j - 1] : 0;
+      const req = maxNeed(lo, set[j]) - above;
+      let f = req > 0 ? roundUp(req, p.roundTo) : 0;
+      if (f > 0) f = Math.max(f, p.minFace);
+      faces[j] = f; above += f;
+    }
+    const pols = set.map((D, j) => ({ D, face: faces[j] })).filter(x => x.face > 0);
+    if (!pols.length) continue;
+    let total = 0, annual = 0;
+    for (const x of pols) {
+      const a = x.face / 1000 * p.rates[x.D];
+      annual += a; total += a * Math.min(x.D, T);
+    }
+    if (!best || total < best.total - 0.5 || (Math.abs(total - best.total) <= 0.5 && pols.length < best.pols.length)) {
+      best = { pols, total, annual };
+    }
+  }
+  if (!best) return null;
+  const cov = [];
+  for (let k = 0; k <= proj.N; k++) {
+    if (k >= T) { cov.push(0); continue; }
+    cov.push(best.pols.filter(x => x.D > k).reduce((s, x) => s + x.face, 0));
+  }
+  best.cov = cov;
+  best.excess = excessPct(cov, needs, T);
+  best.short = shortfalls(cov, needs, T);
+  best.years = T;
+  return best;
+}
+
+function runAll(p) {
+  const proj = project(p);
+  const dec = declining(proj, p);
+  const lvl = dec ? levelTerm(proj, p, dec.F0) : null;
+  const lad = ladder(proj, p);
+  return { proj, dec, lvl, lad };
+}
+// ===== END MODEL =====
+
+
+// ===== UI =====
+const DEFAULTS = {
+  age: 35, retAge: 65, income: 150000, lnw0: 100000,
+  g: 3, save: 15, r: 7,
+  method: 'multiple', mult: 10, repl: 75, disc: 5,
+  debts: 0, college: 0, finalExp: 25000,
+  shape: 'pct', autoDecline: true, manualPct: 5, manualDollar: 50000, manualLevel: 0,
+  roundTo: 50000, minFace: 100000, maxPolicies: 3,
+  r10: 0.30, r15: 0.38, r20: 0.50, r25: 0.70, r30: 0.90, rateDecl: 0.45
+};
+const STORE_KEY = 'declining-term-calc-v1';
+let S = { ...DEFAULTS };
+try { const saved = JSON.parse(localStorage.getItem(STORE_KEY) || 'null'); if (saved) S = { ...S, ...saved }; } catch (e) {}
+const view = { bars: 'grouped', overlay: 'dec', zoom: false };
+
+const GROUPS = [
+  { title: 'Household', fields: [
+    { id: 'age', label: 'Current age', suf: 'yrs', step: 1 },
+    { id: 'retAge', label: 'Retirement age', suf: 'yrs', step: 1 },
+    { id: 'income', label: 'Gross income', pre: '$', step: 5000, money: true },
+    { id: 'lnw0', label: 'Starting liquid net worth', pre: '$', step: 10000, money: true },
+  ]},
+  { title: 'Growth', fields: [
+    { id: 'g', label: 'Income growth', suf: '%', step: 0.25 },
+    { id: 'save', label: 'Savings rate (of gross)', suf: '%', step: 1 },
+    { id: 'r', label: 'Rate of return', suf: '%', step: 0.25 },
+  ]},
+  { title: 'Insurance need', seg: { id: 'method', opts: [['multiple', 'Income multiple'], ['hlv', 'Human life value']] }, fields: [
+    { id: 'mult', label: 'Income multiple', suf: '× inc', step: 1, show: s => s.method === 'multiple' },
+    { id: 'repl', label: 'Income replacement', suf: '%', step: 5, show: s => s.method === 'hlv' },
+    { id: 'disc', label: 'HLV discount rate', suf: '%', step: 0.25, show: s => s.method === 'hlv' },
+    { id: 'debts', label: 'Debts to pay off', pre: '$', step: 10000, money: true },
+    { id: 'college', label: 'College funding', pre: '$', step: 10000, money: true },
+    { id: 'finalExp', label: 'Final expenses', pre: '$', step: 5000, money: true },
+  ], hint: s => s.method === 'hlv'
+      ? 'Replacement % nets out taxes and the insured\'s own spending. Lump sums are held flat.'
+      : 'Lump sums are added on top of the multiple and held flat.' },
+  { title: 'Declining policy design', seg: { id: 'shape', opts: [['pct', '% of balance'], ['line', 'Straight-line']] }, fields: [
+    { id: 'autoDecline', label: 'Auto-fit level period and decline', check: true },
+    { id: 'manualPct', label: 'Decline per year', suf: '%', step: 0.5, show: s => !s.autoDecline && s.shape === 'pct' },
+    { id: 'manualDollar', label: 'Decline per year', pre: '$', step: 5000, money: true, show: s => !s.autoDecline && s.shape === 'line' },
+    { id: 'manualLevel', label: 'Level years before decline', suf: 'yrs', step: 1, show: s => !s.autoDecline },
+    { id: 'roundTo', label: 'Round face amounts to', select: [[10000, '$10K'], [25000, '$25K'], [50000, '$50K'], [100000, '$100K']] },
+    { id: 'minFace', label: 'Minimum policy face', pre: '$', step: 25000, money: true },
+    { id: 'maxPolicies', label: 'Max policies in ladder', select: [[2, '2'], [3, '3']] },
+  ]},
+  { title: 'Premium rates ($ per $1,000 / yr)', fields: [
+    { id: 'r10', label: '10-year level', pre: '$', step: 0.01 },
+    { id: 'r15', label: '15-year level', pre: '$', step: 0.01 },
+    { id: 'r20', label: '20-year level', pre: '$', step: 0.01 },
+    { id: 'r25', label: '25-year level', pre: '$', step: 0.01 },
+    { id: 'r30', label: '30-year level', pre: '$', step: 0.01 },
+    { id: 'rateDecl', label: 'Declining (on starting face)', pre: '$', step: 0.01 },
+  ], hint: () => 'Placeholder rates. Replace with quotes for the client.' },
+];
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const money = v => '$' + Math.round(v).toLocaleString('en-US');
+const compact = v => {
+  const a = Math.abs(v);
+  if (a >= 1e6) return '$' + (v / 1e6).toFixed(a >= 1e7 ? 1 : 2).replace(/\.?0+$/, '') + 'M';
+  if (a >= 1e3) return '$' + Math.round(v / 1e3) + 'K';
+  return '$' + Math.round(v);
+};
+const pct = (v, d = 1) => (v * 100).toFixed(d) + '%';
+
+function buildInputs() {
+  const el = $('inputs');
+  el.innerHTML = GROUPS.map((g, gi) => {
+    const seg = g.seg ? `<div class="seg full" role="group" aria-label="${esc(g.title)}" data-seg="${g.seg.id}">${g.seg.opts.map(([v, l]) => `<button type="button" data-v="${v}" aria-pressed="${S[g.seg.id] === v}">${esc(l)}</button>`).join('')}</div>` : '';
+    const fields = g.fields.map(f => {
+      if (f.check) return `<label class="check" data-row="${f.id}"><input type="checkbox" id="f-${f.id}" ${S[f.id] ? 'checked' : ''}> ${esc(f.label)}</label>`;
+      const ctrl = f.select
+        ? `<select id="f-${f.id}">${f.select.map(([v, l]) => `<option value="${v}" ${+S[f.id] === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`
+        : `<input id="f-${f.id}" type="number" inputmode="decimal" step="${f.step}" value="${S[f.id]}">`;
+      return `<div class="field" data-row="${f.id}"><label for="f-${f.id}">${esc(f.label)}</label><div class="inbox">${f.pre ? `<span>${f.pre}</span>` : ''}${ctrl}${f.suf ? `<span>${f.suf}</span>` : ''}</div></div>`;
+    }).join('');
+    return `<fieldset><legend><h3>${esc(g.title)}</h3></legend>${seg}${fields}${g.hint ? `<p class="hint" data-hint="${gi}"></p>` : ''}</fieldset>`;
+  }).join('') + `<button type="button" class="btn" id="reset">Reset to example</button>`;
+
+  GROUPS.forEach(g => g.fields.forEach(f => {
+    const node = $('f-' + f.id);
+    node.addEventListener(f.check || f.select ? 'change' : 'input', () => {
+      if (f.check) S[f.id] = node.checked;
+      else { const v = parseFloat(node.value); if (!isNaN(v)) S[f.id] = v; }
+      update();
+    });
+  }));
+  el.querySelectorAll('[data-seg]').forEach(seg => seg.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    S[seg.dataset.seg] = b.dataset.v;
+    seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
+    update();
+  }));
+  $('reset').addEventListener('click', () => { S = { ...DEFAULTS }; buildInputs(); update(); });
+}
+
+function refreshVisibility() {
+  GROUPS.forEach((g, gi) => {
+    g.fields.forEach(f => { if (f.show) document.querySelector(`[data-row="${f.id}"]`).classList.toggle('hidden', !f.show(S)); });
+    if (g.hint) document.querySelector(`[data-hint="${gi}"]`).textContent = g.hint(S);
+  });
+}
+
+function params() {
+  return {
+    age: S.age, retAge: S.retAge, income: S.income, lnw0: S.lnw0,
+    g: S.g / 100, save: S.save / 100, r: S.r / 100,
+    method: S.method, mult: S.mult, repl: S.repl / 100, disc: S.disc / 100,
+    debts: S.debts, college: S.college, finalExp: S.finalExp,
+    shape: S.shape, autoDecline: S.autoDecline, manualPct: S.manualPct / 100, manualDollar: S.manualDollar, manualLevel: S.manualLevel,
+    roundTo: +S.roundTo, minFace: S.minFace, maxPolicies: +S.maxPolicies,
+    rates: { 10: S.r10, 15: S.r15, 20: S.r20, 25: S.r25, 30: S.r30 }, rateDecl: S.rateDecl
+  };
+}
+
+let R = null;
+
+function update() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch (e) {}
+  refreshVisibility();
+  if (!(S.retAge > S.age)) { R = null; $('tiles').innerHTML = `<div class="card note warn" style="grid-column:1/-1">Retirement age has to be later than current age.</div>`; $('chart').innerHTML = ''; $('policies').innerHTML = ''; $('cmp').innerHTML = ''; $('yr').innerHTML = ''; $('cmpHint').textContent = ''; return; }
+  R = runAll(params());
+  renderTiles(); renderChart(); renderPolicies(); renderCompare(); renderYearly();
+}
+
+function selfInsuredAge() { const { T, N, gapAtRet } = R.proj; if (T < N) return S.age + T; return gapAtRet <= 0 ? S.retAge : null; }
+
+function options() {
+  const { dec, lvl, lad } = R;
+  if (!dec) return [];
+  const o = [
+    { key: 'dec', name: S.shape === 'pct' ? 'Declining term (% of balance)' : 'Declining term (straight-line)', annual: dec.annual, total: dec.total, years: dec.years, excess: dec.excess, short: dec.short, cov: dec.cov },
+    { key: 'lad', name: `Term ladder (${lad.pols.length} ${lad.pols.length === 1 ? 'policy' : 'policies'})`, annual: lad.annual, total: lad.total, years: lad.years, excess: lad.excess, short: lad.short, cov: lad.cov },
+    { key: 'lvl', name: `${lvl.D}-year level, cancelled when self-insured`, annual: lvl.annual, total: lvl.totalCancel, years: lvl.yearsCancel, excess: lvl.excess, short: lvl.short, cov: lvl.cov },
+    { key: 'lvlFull', name: `${lvl.D}-year level, held to expiration`, annual: lvl.annual, total: lvl.totalFull, years: lvl.D, excess: lvl.excess, short: lvl.short, cov: lvl.cov },
+  ];
+  const valid = o.filter(x => x.short.length === 0 && x.key !== 'lvlFull');
+  const best = valid.reduce((a, b) => (!a || b.total < a.total ? b : a), null);
+  o.forEach(x => x.best = best && x.key === best.key);
+  return o;
+}
+
+function renderTiles() {
+  const { proj, dec } = R;
+  const peakRow = proj.rows.slice(0, Math.max(1, proj.T)).reduce((a, b) => b.need > a.need ? b : a, proj.rows[0]);
+  const sia = selfInsuredAge();
+  const opts = options();
+  const best = opts.find(o => o.best);
+  const lvlCancel = opts.find(o => o.key === 'lvl');
+  const tiles = [];
+  tiles.push({ label: 'Peak insurance need', value: proj.T ? compact(peakRow.need) : '$0', sub: proj.T ? `at age ${peakRow.age}` : 'already self-insured' });
+  tiles.push({ label: 'Self-insured at', value: proj.T === 0 ? `Age ${S.age}` : sia ? `Age ${sia}` : 'Not before retirement', sub: proj.T === 0 ? 'no coverage needed' : sia ? `${proj.T} years of coverage needed` : `gap of ${compact(proj.gapAtRet)} remains at ${S.retAge}` });
+  if (dec) {
+    const rateTxt = dec.shape === 'pct' ? `${pct(dec.rate)} / yr` : `${compact(dec.rate)} / yr`;
+    tiles.push({ label: 'Declining policy', value: compact(dec.F0), sub: `${dec.L ? `level ${dec.L} yrs, then ` : ''}declines ${rateTxt} for ${dec.T} yrs` });
+  } else tiles.push({ label: 'Declining policy', value: 'None needed', sub: '' });
+  if (best && lvlCancel) {
+    const save = lvlCancel.total - best.total;
+    tiles.push({ label: 'Lowest total premium', value: compact(best.total), sub: best.key === 'lvl' ? 'level term is cheapest at these rates' : `${best.key === 'dec' ? 'declining term' : 'ladder'}, saves ${compact(save)} vs. level` });
+  } else tiles.push({ label: 'Lowest total premium', value: '$0', sub: '' });
+  $('tiles').innerHTML = tiles.map(t => `<div class="card tile"><div class="label">${t.label}</div><div class="value">${t.value}</div><div class="sub">${t.sub}</div></div>`).join('');
+}
+
+function niceTicks(max, count = 5) {
+  if (max <= 0) return [0, 1];
+  const raw = max / count;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 2.5, 5, 10].map(m => m * mag).find(s => s >= raw);
+  const ticks = [];
+  for (let v = 0; v <= max + step * 0.001; v += step) ticks.push(v);
+  if (ticks[ticks.length - 1] < max) ticks.push(ticks[ticks.length - 1] + step);
+  return ticks;
+}
+
+function barPath(x, y, w, h, r) {
+  if (h <= 0) return '';
+  r = Math.min(r, w / 2, h);
+  return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`;
+}
+
+function renderChart() {
+  const el = $('chart');
+  const { proj } = R;
+  const rows = proj.rows;
+  const n = rows.length;
+  const opt = options().find(o => o.key === view.overlay) || null;
+  const cov = opt ? opt.cov : null;
+  const W = Math.max(320, el.clientWidth || 800), H = W < 520 ? 300 : 380;
+  const m = { l: 58, r: 12, t: 12, b: 30 };
+  const pw = W - m.l - m.r, ph = H - m.t - m.b;
+  let maxV = 0;
+  rows.forEach((r, i) => {
+    const barTop = view.bars === 'stacked' ? r.lnw + r.need : Math.max(r.lnw, r.need);
+    maxV = Math.max(maxV, view.zoom ? r.need : barTop);
+    if (cov) maxV = Math.max(maxV, cov[i] + (view.bars === 'stacked' && i < R.proj.T ? r.lnw : 0));
+  });
+  if (view.zoom) maxV *= 1.1;
+  const ticks = niceTicks(maxV || 1);
+  const top = ticks[ticks.length - 1];
+  const y = v => m.t + ph - Math.min(v, top) / top * ph;
+  const band = pw / n;
+  const x0 = i => m.l + i * band;
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Bar chart of insurance need and liquid net worth by age">`;
+  ticks.forEach(t => {
+    s += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(t)}" y2="${y(t)}" stroke="var(${t === 0 ? '--axis' : '--line'})" stroke-width="1"/>`;
+    s += `<text x="${m.l - 8}" y="${y(t) + 4}" text-anchor="end">${compact(t)}</text>`;
+  });
+  const labelEvery = n > 40 ? 10 : n > 16 ? 5 : n > 8 ? 2 : 1;
+  const minGap = Math.max(1, Math.ceil(28 / band));
+  const marked = rows.map(r => r.age % labelEvery === 0);
+  [0, n - 1].forEach(i => {
+    if (!marked[i] && !marked.some((v, j) => v && Math.abs(j - i) < minGap)) marked[i] = true;
+  });
+  rows.forEach((r, i) => {
+    if (marked[i]) s += `<text x="${x0(i) + band / 2}" y="${H - 10}" text-anchor="middle">${r.age}</text>`;
+  });
+  s += `<g id="hl"></g>`;
+  const clipNote = [];
+  rows.forEach((r, i) => {
+    if (view.bars === 'grouped') {
+      const bw = Math.max(2, Math.min(12, (band * 0.78 - 2) / 2));
+      const cx = x0(i) + band / 2;
+      const hN = y(0) - y(r.need), hL = y(0) - y(r.lnw);
+      s += `<path d="${barPath(cx - bw - 1, y(r.need), bw, hN, 4)}" fill="var(--series-1)"/>`;
+      s += `<path d="${barPath(cx + 1, y(r.lnw), bw, hL, 4)}" fill="var(--series-2)"/>`;
+      if (view.zoom && r.lnw > top) clipNote.push(i);
+    } else {
+      const bw = Math.max(3, Math.min(24, band * 0.7));
+      const bx = x0(i) + (band - bw) / 2;
+      const lTop = y(r.lnw), hL = y(0) - lTop;
+      if (r.need > 0) {
+        if (hL > 0) s += `<rect x="${bx}" y="${lTop}" width="${bw}" height="${hL}" fill="var(--series-2)"/>`;
+        const nTop = y(r.lnw + r.need), hN = lTop - nTop - (hL > 0 ? 2 : 0);
+        s += `<path d="${barPath(bx, nTop, bw, hN, 4)}" fill="var(--series-1)"/>`;
+      } else {
+        s += `<path d="${barPath(bx, lTop, bw, hL, 4)}" fill="var(--series-2)"/>`;
+      }
+      if (view.zoom && r.lnw + r.need > top) clipNote.push(i);
+    }
+  });
+  clipNote.forEach(i => { s += `<text x="${x0(i) + band / 2}" y="${m.t - 1}" text-anchor="middle" style="font-size:9px">▲</text>`; });
+  if (cov && R.proj.T > 0) {
+    let d = '';
+    const T = R.proj.T;
+    for (let i = 0; i < T; i++) {
+      const yy = y(cov[i] + (view.bars === 'stacked' ? rows[i].lnw : 0));
+      d += (i === 0 ? `M${x0(0)},${yy}` : `V${yy}`) + `H${x0(i + 1)}`;
+    }
+    d += `V${view.bars === 'stacked' ? y(rows[Math.min(T, n - 1)].lnw) : y(0)}`;
+    s += `<path d="${d}" fill="none" stroke="var(--overlay)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  }
+  rows.forEach((r, i) => { s += `<rect class="hit" data-i="${i}" x="${x0(i)}" y="${m.t}" width="${band}" height="${ph}" fill="transparent"/>`; });
+  s += `</svg><div class="tip hidden" id="tip"></div>`;
+  el.innerHTML = s;
+
+  const ovName = { dec: 'Declining term coverage', lad: 'Ladder coverage', lvl: 'Level term coverage' }[view.overlay];
+  $('legend').innerHTML = `<span><i style="background:var(--series-1)"></i>Insurance need</span><span><i style="background:var(--series-2)"></i>Liquid net worth</span>${cov ? `<span><i class="line"></i>${ovName}${view.bars === 'stacked' ? ' + net worth' : ''}</span>` : ''}${view.zoom && clipNote.length ? `<span>▲ net worth runs above the zoomed scale</span>` : ''}`;
+
+  const svg = el.querySelector('svg'), tip = $('tip'), hl = el.querySelector('#hl');
+  const show = (i, evt) => {
+    const r = rows[i];
+    hl.innerHTML = `<rect x="${x0(i)}" y="${m.t}" width="${band}" height="${ph}" fill="var(--accent-wash)"/>`;
+    const covLine = cov ? `<div class="r"><span><i style="background:var(--overlay)"></i>${ovName.replace(' coverage', '')}</span><span>${compact(cov[i])}</span></div>` : '';
+    tip.innerHTML = `<b>Age ${r.age}</b>
+      <div class="r"><span><i style="background:var(--series-1)"></i>Insurance need</span><span>${compact(r.need)}</span></div>
+      <div class="r"><span><i style="background:var(--series-2)"></i>Liquid net worth</span><span>${compact(r.lnw)}</span></div>
+      ${covLine}
+      <div class="r"><span>Total need before assets</span><span>${compact(r.target)}</span></div>
+      <div class="r"><span>Income</span><span>${compact(r.income)}</span></div>`;
+    tip.classList.remove('hidden');
+    const box = el.getBoundingClientRect();
+    const px = (x0(i) + band / 2) / W * box.width;
+    const tw = tip.offsetWidth;
+    let left = px + 14; if (left + tw > box.width) left = px - tw - 14; if (left < 0) left = 0;
+    tip.style.left = left + 'px'; tip.style.top = '8px';
+  };
+  svg.querySelectorAll('.hit').forEach(h => {
+    h.addEventListener('pointerenter', e => show(+h.dataset.i, e));
+    h.addEventListener('pointerdown', e => show(+h.dataset.i, e));
+  });
+  svg.addEventListener('pointerleave', () => { tip.classList.add('hidden'); hl.innerHTML = ''; });
+}
+
+function renderPolicies() {
+  const { dec, lad, lvl, proj } = R;
+  const el = $('policies');
+  if (!dec) { el.innerHTML = `<div class="card note" style="grid-column:1/-1">Liquid net worth already covers the need at every age, so no coverage is required.</div>`; return; }
+  const opts = options();
+  const isBest = k => opts.find(o => o.key === k).best;
+  const tag = k => isBest(k) ? `<span class="tag best">Lowest cost</span>` : `<span class="tag">Option</span>`;
+  const shortNote = (sh) => sh.length ? `<p class="note warn">Coverage falls short of the need at age ${sh.map(k => S.age + k).slice(0, 6).join(', ')}${sh.length > 6 ? '…' : ''}.</p>` : '';
+  const T = proj.T;
+  const gap = !selfInsuredAge() ? `<p class="note warn">Need isn't $0 by retirement. Coverage runs to age ${S.retAge}; ${compact(proj.gapAtRet)} would still be uncovered.</p>` : '';
+  const decRate = dec.shape === 'pct' ? `${pct(dec.rate)} of balance` : `${money(dec.rate)}`;
+  const decCard = `<div class="card policy">${tag('dec')}<h2>Declining term</h2>
+    <dl>
+      <dt>Starting face</dt><dd>${money(dec.F0)}</dd>
+      <dt>Term</dt><dd>${dec.T} yrs (to age ${S.age + dec.T})</dd>
+      <dt>Level period</dt><dd>${dec.L} yrs</dd>
+      <dt>Decline per year</dt><dd>${decRate}</dd>
+      <dt>Face in final year</dt><dd>${money(dec.endFace)}</dd>
+      <dt>Annual premium</dt><dd>${money(dec.annual)}</dd>
+      <dt>Excess coverage</dt><dd>${pct(dec.excess, 0)}</dd>
+    </dl>
+    ${S.autoDecline && dec.binding >= 0 ? `<p class="hint">The need at age ${S.age + dec.binding} is what limits the decline. Any faster and coverage would dip below it.</p>` : ''}
+    ${S.autoDecline && dec.rate === 0 ? `<p class="hint">No decline fits: the need stays near its peak for the whole term.</p>` : ''}
+    ${shortNote(dec.short)}${gap}</div>`;
+  const ladRows = lad.pols.slice().reverse().map(x => `<dt>${x.D}-year level</dt><dd>${money(x.face)}</dd>`).join('');
+  const steps = lad.pols.map((x, j) => { const amt = lad.pols.slice(j).reduce((s, y) => s + y.face, 0); const from = j ? lad.pols[j - 1].D : 0; return from < T ? `${S.age + from}–${S.age + Math.min(x.D, T)}: ${compact(amt)}` : null; }).filter(Boolean);
+  const ladCard = `<div class="card policy">${tag('lad')}<h2>Term ladder</h2>
+    <dl>${ladRows}
+      <dt>Total coverage at start</dt><dd>${money(lad.cov[0])}</dd>
+      <dt>First-year premium</dt><dd>${money(lad.annual)}</dd>
+      <dt>Excess coverage</dt><dd>${pct(lad.excess, 0)}</dd>
+    </dl>
+    <p class="hint">Coverage by age: ${steps.join(' · ')}</p>
+    ${shortNote(lad.short)}</div>`;
+  const lvlCard = `<div class="card policy">${tag('lvl')}<h2>Level term</h2>
+    <dl>
+      <dt>Face</dt><dd>${money(lvl.face)}</dd>
+      <dt>Term bought</dt><dd>${lvl.D} yrs</dd>
+      <dt>Cancelled at</dt><dd>age ${S.age + lvl.yearsCancel}</dd>
+      <dt>Annual premium</dt><dd>${money(lvl.annual)}</dd>
+      <dt>Excess coverage</dt><dd>${pct(lvl.excess, 0)}</dd>
+    </dl>
+    <p class="hint">The baseline: one policy sized at the peak need, dropped once liquid net worth covers it.</p>
+    ${T > 30 ? `<p class="note warn">Need lasts ${T} years, longer than the longest term (30).</p>` : ''}</div>`;
+  el.innerHTML = decCard + ladCard + lvlCard;
+}
+
+function renderCompare() {
+  const opts = options();
+  if (!opts.length) { $('cmp').innerHTML = ''; $('cmpHint').textContent = ''; return; }
+  $('cmp').innerHTML = `<thead><tr><th>Structure</th><th>Years paid</th><th>First-year premium</th><th>Total premiums</th><th>Excess coverage</th><th>Covers every year</th></tr></thead><tbody>` +
+    opts.map(o => `<tr class="${o.best ? 'best' : ''}"><td>${esc(o.name)}${o.best ? ' · <b>lowest</b>' : ''}</td><td>${o.years}</td><td>${money(o.annual)}</td><td>${money(o.total)}</td><td>${pct(o.excess, 0)}</td><td>${o.short.length ? 'No' : 'Yes'}</td></tr>`).join('') + `</tbody>`;
+  const dec = R.dec;
+  const rival = Math.min(R.lad.total, R.lvl.totalCancel);
+  const be = rival / (dec.F0 / 1000 * dec.T);
+  $('cmpHint').innerHTML = `Break-even: declining term beats the cheaper of the ladder and cancelled level term if its quote is under <b>$${be.toFixed(2)} per $1,000</b> of starting face (you entered $${(+S.rateDecl).toFixed(2)}). Excess coverage is the insurance bought above the need, as a share of total need across the coverage years.`;
+}
+
+function renderYearly() {
+  const { proj, dec, lad, lvl } = R;
+  const head = `<thead><tr><th>Age</th><th>Income</th><th>Liquid net worth</th><th>Total need before assets</th><th>Insurance need</th>${dec ? '<th>Declining</th><th>Ladder</th><th>Level</th>' : ''}</tr></thead>`;
+  const body = proj.rows.map((r, i) => `<tr class="${r.need === 0 ? 'zero' : ''}"><td>${r.age}</td><td>${money(r.income)}</td><td>${money(r.lnw)}</td><td>${money(r.target)}</td><td>${money(r.need)}</td>${dec ? `<td>${money(dec.cov[i])}</td><td>${money(lad.cov[i])}</td><td>${money(lvl.cov[i])}</td>` : ''}</tr>`).join('');
+  $('yr').innerHTML = head + '<tbody>' + body + '</tbody>';
+}
+
+function markdown() {
+  const { proj, dec, lad, lvl } = R;
+  const L = [];
+  L.push(`## Declining term needs analysis`, '');
+  L.push(`- **Client:** age ${S.age}, retiring at ${S.retAge}, income ${money(S.income)} growing ${S.g}%, saving ${S.save}%, starting [[liquid net worth]] ${money(S.lnw0)}, return ${S.r}%`);
+  L.push(`- **Need method:** ${S.method === 'hlv' ? `[[human life value]], ${S.repl}% replacement, ${S.disc}% discount` : `${S.mult}× income`} + lump sums ${money(S.debts + S.college + S.finalExp)}`);
+  L.push(`- **Self-insured at:** ${selfInsuredAge() ? 'age ' + selfInsuredAge() : 'not before retirement'}`);
+  if (dec) {
+    L.push(`- **[[Declining term]]:** ${money(dec.F0)} for ${dec.T} yrs, level ${dec.L} yrs, then ${dec.shape === 'pct' ? pct(dec.rate) + ' of balance' : money(dec.rate)} per year; premium ${money(dec.annual)}/yr`);
+    L.push(`- **[[Term ladder]]:** ${lad.pols.map(x => `${money(x.face)} ${x.D}-yr`).join(' + ')}; first-year premium ${money(lad.annual)}`);
+    L.push(`- **Level term:** ${money(lvl.face)} ${lvl.D}-yr; premium ${money(lvl.annual)}/yr`);
+    L.push('', '| Structure | Years paid | Total premiums | Excess coverage |', '|---|---:|---:|---:|');
+    options().forEach(o => L.push(`| ${o.name}${o.best ? ' (lowest)' : ''} | ${o.years} | ${money(o.total)} | ${pct(o.excess, 0)} |`));
+  }
+  L.push('', '| Age | Income | LNW | Need | ' + (dec ? 'Declining | Ladder | Level |' : ''), '|---:|---:|---:|---:|' + (dec ? '---:|---:|---:|' : ''));
+  proj.rows.forEach((r, i) => L.push(`| ${r.age} | ${money(r.income)} | ${money(r.lnw)} | ${money(r.need)} | ` + (dec ? `${money(dec.cov[i])} | ${money(lad.cov[i])} | ${money(lvl.cov[i])} |` : '')));
+  L.push('', '#finance/insurance #finance/planning');
+  return L.join('\n');
+}
+
+document.querySelectorAll('#barMode, #overlay').forEach(seg => seg.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (seg.id === 'barMode') view.bars = b.dataset.v; else view.overlay = b.dataset.v;
+  seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
+  if (R) renderChart();
+}));
+$('zoom').addEventListener('change', e => { view.zoom = e.target.checked; if (R) renderChart(); });
+$('copyMd').addEventListener('click', async () => {
+  if (!R) return;
+  try { await navigator.clipboard.writeText(markdown()); $('copyStatus').textContent = 'Copied.'; }
+  catch (e) { $('copyStatus').textContent = 'Copy was blocked by the browser.'; }
+  setTimeout(() => $('copyStatus').textContent = '', 2500);
+});
+let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => R && renderChart(), 120); });
+
+buildInputs();
+update();
+</script>
+</body>
+</html>

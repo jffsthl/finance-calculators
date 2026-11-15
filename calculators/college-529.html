@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>529 College Savings Calculator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="shared.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>529 College Savings</h1>
+    <p>Project what college will cost when your child gets there, how far your 529 savings will go, and what monthly amount would close any gap.</p>
+  </header>
+
+  <div class="layout">
+    <aside aria-label="Inputs">
+      <fieldset>
+        <legend>Student</legend>
+        <div class="f"><label for="age">Child's age now</label><div class="in"><input id="age" type="number" min="0" max="25" step="1" value="5"><span>yrs</span></div></div>
+        <div class="f"><label for="startAge">Starts college at</label><div class="in"><input id="startAge" type="number" min="1" max="30" step="1" value="18"><span>yrs</span></div></div>
+        <div class="f"><label for="nYears">Years of school</label><div class="in"><input id="nYears" type="number" min="1" max="8" step="1" value="4"><span>yrs</span></div></div>
+        <div class="f"><label for="cover">Share to cover</label><div class="in"><input id="cover" type="number" min="0" max="100" step="5" value="100"><span>%</span></div></div>
+      </fieldset>
+
+      <fieldset>
+        <legend>College cost</legend>
+        <div class="f full"><label for="cost">Yearly cost in today's dollars</label><div class="in"><span>$</span><input id="cost" type="number" min="0" step="1000" value="30000"></div></div>
+        <div class="f full"><label for="cInfl">College cost inflation</label><div class="in"><input id="cInfl" type="number" min="0" max="15" step="0.25" value="5"><span>%/yr</span></div></div>
+        <p class="hint">Use the school's total cost of attendance (tuition, fees, housing, food, books) after any expected aid.</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>529 savings</legend>
+        <div class="f full"><label for="bal">Current 529 balance</label><div class="in"><span>$</span><input id="bal" type="number" min="0" step="500" value="10000"></div></div>
+        <div class="f"><label for="pmt">Monthly contribution</label><div class="in"><span>$</span><input id="pmt" type="number" min="0" step="25" value="250"></div></div>
+        <div class="f"><label for="step">Raise each year</label><div class="in"><input id="step" type="number" min="0" max="25" step="0.5" value="0"><span>%</span></div></div>
+        <div class="seg" role="group" aria-label="When contributions stop">
+          <button type="button" id="stopStart" aria-pressed="true">Stop at college</button>
+          <button type="button" id="stopEnd" aria-pressed="false">Keep going in college</button>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Returns</legend>
+        <div class="f"><label for="rPre">Before college</label><div class="in"><input id="rPre" type="number" min="-10" max="20" step="0.25" value="6"><span>%</span></div></div>
+        <div class="f"><label for="rDur">During college</label><div class="in"><input id="rDur" type="number" min="-10" max="20" step="0.25" value="3"><span>%</span></div></div>
+        <p class="hint">Age-based 529 portfolios usually shift toward bonds and cash as college nears, so the return during school is often lower.</p>
+      </fieldset>
+
+      <button type="button" class="reset" id="reset">Reset to defaults</button>
+    </aside>
+
+    <main>
+      <section class="stats" id="stats" aria-label="Summary"></section>
+      <div id="verdict" class="callout"></div>
+
+      <section class="panel">
+        <h2>529 balance and college bills</h2>
+        <p class="sub">The line shows the 529 balance by the child's age. Bars show each school year's bill, split into what the 529 pays and what's left uncovered.</p>
+        <div class="chart"><canvas id="c1" role="img" aria-label="Chart of 529 balance and yearly college costs"></canvas></div>
+      </section>
+
+      <section class="panel">
+        <details>
+          <summary>Year-by-year table</summary>
+          <div class="tbl"><table id="tbl"></table></div>
+        </details>
+      </section>
+      <p class="note">Each school year's bill is paid from the 529 at the start of that year. Returns are constant and compounded monthly. Qualified withdrawals are federally tax-free. Excludes financial aid changes, state tax benefits and the tax and 10% penalty on the earnings in non-qualified withdrawals.</p>
+    </main>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const num = id => { const v = parseFloat($(id).value); return isFinite(v) ? v : 0; };
+const usd = (v, d = 0) => (v < 0 ? "-" : "") + "$" + Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+const usdK = v => Math.abs(v) >= 1e6 ? "$" + (v / 1e6).toFixed(1) + "M" : Math.abs(v) >= 1000 ? "$" + Math.round(v / 1000) + "k" : "$" + Math.round(v);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const FIELDS = ["age", "startAge", "nYears", "cover", "cost", "cInfl", "bal", "pmt", "step", "rPre", "rDur"];
+const DEFAULTS = Object.fromEntries(FIELDS.map(k => [k, $(k).value]));
+const KEY = "calc-college-529";
+let keepGoing = false;
+
+function setSeg(on) { $("stopStart").setAttribute("aria-pressed", !on); $("stopEnd").setAttribute("aria-pressed", on); }
+$("stopStart").onclick = () => { keepGoing = false; setSeg(false); run(); };
+$("stopEnd").onclick = () => { keepGoing = true; setSeg(true); run(); };
+FIELDS.forEach(k => $(k).addEventListener("input", run));
+$("reset").onclick = () => { FIELDS.forEach(k => $(k).value = DEFAULTS[k]); keepGoing = false; setSeg(false); run(); };
+try {
+  const s = JSON.parse(localStorage.getItem(KEY) || "null");
+  if (s) { FIELDS.forEach(k => { if (s[k] != null) $(k).value = s[k]; }); keepGoing = !!s.keepGoing; setSeg(keepGoing); }
+} catch (e) {}
+
+const mRate = pct => Math.pow(1 + pct / 100, 1 / 12) - 1;
+
+// Month-by-month simulation from today through the last school year.
+function simulate(p, pmt, lump = 0) {
+  const T = Math.max(p.startAge - p.age, 0) * 12;          // months until the first bill
+  const end = T + p.nYears * 12;
+  const rPre = mRate(p.rPre), rDur = mRate(p.rDur);
+  let bal = p.bal + lump, contrib = p.bal + lump, need = 0, paid = 0, short = 0, balAtStart = null;
+  const years = [];                                          // one row per year of the child's age
+  let yr = { age: p.age, contrib: 0, bill: 0, paid: 0, short: 0 };
+  for (let t = 0; t < end; t++) {
+    if (t >= T && (t - T) % 12 === 0) {                      // start-of-school-year bill
+      if (t === T) balAtStart = bal;
+      const k = (t - T) / 12;
+      const bill = p.cost * Math.pow(1 + p.cInfl / 100, T / 12 + k) * p.cover / 100;
+      const pay = Math.min(bill, Math.max(bal, 0));
+      bal -= pay; need += bill; paid += pay; short += bill - pay;
+      yr.bill += bill; yr.paid += pay; yr.short += bill - pay;
+    }
+    bal *= 1 + (t < T ? rPre : rDur);
+    const contributing = t < T || keepGoing;
+    if (contributing) {
+      const c = pmt * Math.pow(1 + p.step / 100, Math.floor(t / 12));
+      bal += c; contrib += c; yr.contrib += c;
+    }
+    if ((t + 1) % 12 === 0) { yr.bal = bal; years.push(yr); yr = { age: p.age + (t + 1) / 12, contrib: 0, bill: 0, paid: 0, short: 0 }; }
+  }
+  if (balAtStart === null) balAtStart = bal;
+  return { T, need, paid, short, leftover: bal, balAtStart, contrib, years };
+}
+
+// Smallest value that brings the shortfall to zero (bisection: shortfall falls as money rises).
+function solve(fn, hi) {
+  if (fn(0) <= 0.5) return 0;
+  while (fn(hi) > 0.5 && hi < 1e9) hi *= 2;
+  let lo = 0;
+  for (let i = 0; i < 60; i++) { const mid = (lo + hi) / 2; if (fn(mid) > 0.5) lo = mid; else hi = mid; }
+  return hi;
+}
+
+function run() {
+  const p = Object.fromEntries(FIELDS.map(k => [k, num(k)]));
+  p.age = Math.max(Math.round(p.age), 0); p.startAge = Math.max(Math.round(p.startAge), 0); p.nYears = Math.min(Math.max(Math.round(p.nYears), 1), 8);
+  const s = simulate(p, p.pmt);
+  const yrsOut = Math.max(p.startAge - p.age, 0);
+  const funded = s.need > 0 ? s.paid / s.need : 1;
+  const firstBill = p.cost * Math.pow(1 + p.cInfl / 100, yrsOut) * p.cover / 100;
+
+  $("stats").innerHTML = [
+    ["Total college cost", usd(s.need), `${p.nYears} yrs starting in ${yrsOut} yr${yrsOut === 1 ? "" : "s"} · first year ${usd(firstBill)}`],
+    ["529 at college start", usd(s.balAtStart), `${usd(s.contrib)} contributed in total`],
+    ["Share funded", Math.round(funded * 100) + "%", s.short > 0.5 ? `<b class="bad">${usd(s.short)} uncovered</b>` : `<b class="good">Fully covered</b>`],
+    ["Left over after school", usd(Math.max(s.leftover, 0)), s.leftover > 1 ? "can go to a sibling or other uses" : "—"],
+  ].map(([k, v, d]) => `<div class="stat"><span class="k">${k}</span><span class="v">${v}</span><span class="d">${d}</span></div>`).join("");
+
+  const v = $("verdict");
+  if (s.need <= 0) { v.className = "callout"; v.textContent = "Enter a yearly cost to see a projection."; }
+  else if (s.short <= 0.5) {
+    v.className = "callout good";
+    const minPmt = solve(c => simulate(p, c).short, Math.max(p.pmt, 100));
+    v.innerHTML = `<b>On track.</b> Your plan covers ${p.cover}% of the projected cost.` +
+      (p.pmt - minPmt > 1 ? ` About <b>${usd(minPmt)}/month</b> would be enough, so you have ${usd(p.pmt - minPmt)}/month of cushion.` : "");
+  } else {
+    v.className = "callout bad";
+    const needPmt = solve(c => simulate(p, c).short, Math.max(p.pmt, 100));
+    const needLump = solve(l => simulate(p, p.pmt, l).short, 10000);
+    v.innerHTML = `<b>Short by ${usd(s.short)}.</b> To cover ${p.cover}% of the cost, contribute about <b>${usd(needPmt)}/month</b>` +
+      (p.step ? ` (raised ${p.step}% a year)` : "") + `, or add a one-time deposit of <b>${usd(needLump)}</b> today and keep your ${usd(p.pmt)}/month.`;
+  }
+
+  draw(s);
+  $("tbl").innerHTML = "<thead><tr>" + ["Age", "Contributed", "College bill", "Paid by 529", "Uncovered", "Year-end balance"].map(h => `<th scope="col">${h}</th>`).join("") + "</tr></thead><tbody>" +
+    s.years.map(r => `<tr${r.bill > 0 ? ' class="mark"' : ""}><td>${r.age}–${r.age + 1}</td><td>${usd(r.contrib)}</td><td>${r.bill ? usd(r.bill) : "—"}</td><td>${r.bill ? usd(r.paid) : "—"}</td><td>${r.short > 0.5 ? usd(r.short) : "—"}</td><td>${usd(Math.max(r.bal, 0))}</td></tr>`).join("") + "</tbody>";
+
+  try { localStorage.setItem(KEY, JSON.stringify({ ...Object.fromEntries(FIELDS.map(k => [k, $(k).value])), keepGoing })); } catch (e) {}
+}
+
+let chart;
+const FF = '"Public Sans", system-ui, sans-serif';
+function draw(s) {
+  const rows = s.years, labels = rows.map(r => "Age " + (r.age + 1));
+  const line = css("--line"), muted = css("--muted"), surface = css("--surface");
+  const ds = [
+    { type: "line", label: "529 balance", data: rows.map(r => Math.max(r.bal, 0)), borderColor: css("--s4"), backgroundColor: css("--s4"), borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 5, tension: .15, order: 0 },
+    { type: "bar", label: "Paid by 529", data: rows.map(r => r.paid || null), backgroundColor: css("--s2"), stack: "b", order: 1 },
+    { type: "bar", label: "Uncovered", data: rows.map(r => r.short > 0.5 ? r.short : null), backgroundColor: css("--s3"), stack: "b", order: 1 },
+  ];
+  const opts = {
+    responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: "index", intersect: false },
+    plugins: {
+      legend: { position: "top", align: "start", labels: { color: css("--ink-2"), boxWidth: 12, boxHeight: 12, font: { family: FF } } },
+      tooltip: { backgroundColor: surface, titleColor: css("--ink"), bodyColor: css("--ink-2"), borderColor: line, borderWidth: 1, padding: 10,
+        titleFont: { family: FF, weight: "600" }, bodyFont: { family: FF },
+        filter: i => i.parsed.y != null, callbacks: { title: i => "Year ending at age " + (rows[i[0].dataIndex].age + 1), label: c => ` ${c.dataset.label}: ${usd(c.parsed.y)}` } }
+    },
+    scales: {
+      x: { stacked: true, grid: { display: false }, border: { color: line }, ticks: { color: muted, font: { family: FF }, maxRotation: 0, autoSkipPadding: 10 } },
+      y: { stacked: true, beginAtZero: true, grid: { color: line }, border: { display: false }, ticks: { color: muted, font: { family: FF }, callback: v => usdK(v), maxTicksLimit: 6 } }
+    }
+  };
+  if (chart) { chart.data.labels = labels; chart.data.datasets = ds; chart.options = opts; chart.update(); }
+  else chart = new Chart($("c1"), { data: { labels, datasets: ds }, options: opts });
+}
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { chart && chart.destroy(); chart = null; run(); });
+run();
+</script>
+</body>
+</html>

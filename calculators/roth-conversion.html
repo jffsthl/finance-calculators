@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roth Conversion Desk</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Instrument+Serif&display=swap" rel="stylesheet">
+<style>
+/* Layout idea: one phone-width column; verdict first, evidence below, the working papers last. */
+:root{
+  --bg:#f3f5f0; --surface:#fcfcfb; --ink:#0e1512; --ink2:#4b534e; --muted:#7f857f; --line:#dfe2da; --axis:#c2c6bd;
+  --accent:#0f5f4e; --accent-ink:#ffffff; --wash:#e6efe9;
+  --pre:#2a78d6; --txb:#eb6834; --roth:#1baf7a;
+  --good:#0ca30c; --warn:#fab219; --crit:#d03b3b;
+  --display:"Instrument Serif", Georgia, serif; --body:"IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){ color-scheme:dark;
+    --bg:#0b0e0d; --surface:#161a18; --ink:#eef0ec; --ink2:#bfc4bc; --muted:#858a84; --line:#2a2f2c; --axis:#3a403c;
+    --accent:#5fcdb0; --accent-ink:#06231c; --wash:#1c2a25;
+    --pre:#3987e5; --txb:#d95926; --roth:#199e70; }
+}
+:root[data-theme="dark"]{ color-scheme:dark;
+  --bg:#0b0e0d; --surface:#161a18; --ink:#eef0ec; --ink2:#bfc4bc; --muted:#858a84; --line:#2a2f2c; --axis:#3a403c;
+  --accent:#5fcdb0; --accent-ink:#06231c; --wash:#1c2a25;
+  --pre:#3987e5; --txb:#d95926; --roth:#199e70; }
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.45}
+main{max-width:560px;margin:0 auto;padding:20px 16px 48px;display:flex;flex-direction:column;gap:14px}
+h1{font-family:var(--display);font-weight:400;font-size:34px;line-height:1.05;margin:0;text-wrap:balance}
+h2{font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink2);margin:0}
+p{margin:0}
+.sub{color:var(--ink2);font-size:14px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.seg{display:flex;gap:6px;flex-wrap:wrap}
+.seg button{font:inherit;font-size:13px;font-weight:500;padding:8px 12px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--ink2);cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible,svg:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.verdict{background:var(--wash);border-color:transparent}
+.hero{font-family:var(--display);font-size:60px;line-height:1;letter-spacing:-.01em}
+.hero small{font-family:var(--body);font-size:13px;color:var(--ink2);display:block;margin-top:6px;letter-spacing:0}
+.tiles{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.tile{background:var(--surface);border-radius:8px;padding:9px 10px;min-width:0}
+.tile b{display:block;font-size:17px;font-weight:600}
+.tile span{font-size:11.5px;color:var(--ink2);line-height:1.25;display:block}
+.tile em{color:var(--muted);font-size:11.5px;font-style:normal;display:block;line-height:1.25}
+details.card{display:block}
+details.card>.form{margin-top:12px}
+details.card>summary{cursor:pointer;gap:10px;font-weight:600;list-style:none;display:flex;justify-content:space-between;align-items:center}
+details.card>summary::-webkit-details-marker{display:none}
+details.card>summary::after{content:"Edit";font-size:13px;font-weight:500;color:var(--accent);border:1px solid var(--line);border-radius:999px;padding:4px 12px}
+details[open].card>summary::after{content:"Done"}
+.form{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.form label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--ink2);min-width:0}
+.form input,.form select{font:inherit;font-size:16px;padding:8px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--ink);width:100%;font-variant-numeric:tabular-nums}
+.form .full{grid-column:1/-1;font-size:12px;font-weight:600;color:var(--muted);letter-spacing:.05em;text-transform:uppercase;margin-top:4px}
+.chart svg{display:block;width:100%;height:auto;touch-action:pan-y;cursor:crosshair}
+.chart text{font-family:var(--body);font-size:10px;fill:var(--muted);font-variant-numeric:tabular-nums}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--ink2)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.legend i.ln{height:0;border-top:2px solid;border-radius:0;vertical-align:3px;width:14px}
+.legend i.dash{border-top-style:dashed}
+.readout{font-size:12.5px;color:var(--ink2);background:var(--bg);border-radius:7px;padding:7px 9px;min-height:52px;font-variant-numeric:tabular-nums}
+.readout b{color:var(--ink);font-weight:600}
+.find{display:flex;flex-direction:column;gap:8px}
+.f{border-left:3px solid var(--muted);padding:2px 0 2px 10px}
+.f.crit{border-color:var(--crit)}.f.warn{border-color:var(--warn)}.f.good{border-color:var(--good)}
+.f b{display:block;font-size:14px}
+.f .tag{font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink2)}
+.f p{font-size:13.5px;color:var(--ink2)}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -14px;padding:0 14px}
+table{border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
+th,td{padding:5px 8px;text-align:right;border-bottom:1px solid var(--line)}
+th{font-weight:600;color:var(--ink2);position:sticky;top:0;background:var(--surface)}
+td:first-child,th:first-child{text-align:left;position:sticky;left:0;background:var(--surface)}
+td.hi{color:var(--ink);font-weight:600}
+.pill{display:inline-block;font-size:10.5px;font-weight:600;border-radius:999px;padding:1px 7px;border:1px solid var(--line);color:var(--ink2)}
+.pill.w{border-color:var(--warn)}.pill.c{border-color:var(--crit)}
+textarea{width:100%;height:300px;font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:10px;resize:vertical}
+.row{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.btn{font:inherit;font-size:13px;font-weight:600;padding:8px 14px;border-radius:999px;border:0;background:var(--accent);color:var(--accent-ink);cursor:pointer}
+.fine{font-size:12px;color:var(--muted)}
+.fine li{margin-bottom:4px}
+ul{margin:0;padding-left:18px}
+</style>
+</head>
+<body>
+<main>
+  <header style="display:flex;flex-direction:column;gap:6px">
+    <h1>Roth Conversion Desk</h1>
+    <p class="sub">A year-by-year tax engine that tests 30 conversion rules, fine-tunes each year's amount, then stress-tests the result across 400 markets. It reruns every time you change a number.</p>
+  </header>
+
+  <div class="seg" id="presets" role="group" aria-label="Example households"></div>
+
+  <section class="card verdict" id="verdict" aria-live="polite"></section>
+
+  <details class="card" id="inputs">
+    <summary><span id="hhline">Household</span></summary>
+    <div class="form" id="form"></div>
+  </details>
+
+  <section class="card">
+    <h2>What to convert, and when</h2>
+    <div class="chart" id="c-conv"></div>
+    <div class="readout" id="r-conv"></div>
+  </section>
+
+  <section class="card">
+    <h2>Tax rate on the next dollar</h2>
+    <div class="legend"><span><i class="ln" style="border-color:var(--pre)"></i>With the plan</span><span><i class="ln dash" style="border-color:var(--muted)"></i>Do nothing</span></div>
+    <div class="chart" id="c-marg"></div>
+    <div class="readout" id="r-marg"></div>
+  </section>
+
+  <section class="card">
+    <h2>What the engine found</h2>
+    <div class="find" id="findings"></div>
+  </section>
+
+  <section class="card">
+    <div class="row"><h2>Where the money sits</h2>
+      <div class="seg" id="viewseg" role="group" aria-label="Scenario shown"><button data-v="plan" aria-pressed="true">Plan</button><button data-v="base" aria-pressed="false">Do nothing</button></div></div>
+    <div class="legend"><span><i style="background:var(--pre)"></i>Pre-tax</span><span><i style="background:var(--txb)"></i>Taxable</span><span><i style="background:var(--roth)"></i>Roth</span></div>
+    <div class="chart" id="c-bal"></div>
+    <div class="readout" id="r-bal"></div>
+    <div class="scroll"><table id="tbl"></table></div>
+  </section>
+
+  <section class="card">
+    <h2>400 simulated markets</h2>
+    <div class="legend"><span><i style="background:var(--pre);opacity:.25"></i>Plan, 10th to 90th percentile</span><span><i class="ln" style="border-color:var(--pre)"></i>Plan median</span><span><i class="ln dash" style="border-color:var(--muted)"></i>Do-nothing median</span></div>
+    <div class="chart" id="c-mc"></div>
+    <div class="readout" id="r-mc">Running 400 market paths…</div>
+  </section>
+
+  <section class="card">
+    <div class="row"><h2>The write-up</h2>
+      <div class="seg" id="memoseg" role="group" aria-label="Write-up format"><button data-m="client" aria-pressed="true">Client letter</button><button data-m="note" aria-pressed="false">Obsidian note</button></div></div>
+    <textarea id="memo" readonly aria-label="Generated write-up"></textarea>
+    <div class="row"><span class="fine" id="copymsg">Markdown. Rewritten on every run.</span><button class="btn" id="copy">Copy write-up</button></div>
+  </section>
+
+  <section class="card">
+    <h2>What this models, and what it skips</h2>
+    <ul class="fine">
+      <li>2026 federal law: ordinary brackets, standard and age-65 deductions, the $6,000 senior deduction through 2028, capital-gain stacking, Social Security taxation, NIIT, RMDs from the Uniform Lifetime Table, and IRMAA with its two-year lookback.</li>
+      <li>Each spouse owns an IRA with its own RMD start age. At the first death the survivor rolls the other IRA into their own, files single, keeps the larger Social Security benefit and half of any pension, and spends 80% as much. A couple's plan runs until the younger spouse, or the survivor, reaches the plan age.</li>
+      <li>Everything is in today's dollars. Brackets are assumed to keep pace with inflation. Social Security and NIIT thresholds are not indexed, so they shrink in real terms each year.</li>
+      <li>Spending comes from taxable first, then pre-tax, then Roth. For couples of different ages the engine tests converting from each spouse's IRA first and keeps the better order. The do-nothing path draws from the older spouse's IRA first. The score is after-tax wealth in the final year: Roth and taxable at full value, pre-tax net of the heirs' tax rate.</li>
+      <li>The taxable account pays a 1.8% qualified dividend and is otherwise untaxed until sold. Pensions are assumed to rise with inflation. A joint return is filed for the year of a death, and the deceased spouse's RMD for that year is still taken.</li>
+      <li>Skipped: per-spouse Roth and taxable ownership, the Joint Life RMD table for a spouse more than 10 years younger, the Roth five-year rules, QCDs, ACA subsidies before 65, asset location, state tax beyond a flat rate, and the 10% early-withdrawal penalty.</li>
+      <li>Example households are invented. This is a planning sketch to check against your own software before it reaches a client.</li>
+    </ul>
+  </section>
+</main>
+<script>
+/* ===== Tax + distribution engine. All dollars are real (today's) dollars; 2026 law. ===== */
+const LAW = {
+  mfj: { std: 32200, add65: 1650,
+    br: [[24800,.10],[100800,.12],[211400,.22],[403550,.24],[512450,.32],[768700,.35],[Infinity,.37]],
+    ltcg: [98900, 613700], ss: [32000, 44000], niit: 250000, seniorPhase: 150000,
+    irmaa: [218000, 274000, 342000, 410000, 750000] },
+  single: { std: 16100, add65: 2050,
+    br: [[12400,.10],[50400,.12],[105700,.22],[201775,.24],[256225,.32],[640600,.35],[Infinity,.37]],
+    ltcg: [49450, 545500], ss: [25000, 34000], niit: 200000, seniorPhase: 75000,
+    irmaa: [109000, 137000, 171000, 205000, 500000] }
+};
+const IRMAA_MO = [0, 81.20+14.50, 202.90+37.50, 324.60+60.40, 446.30+83.30, 487.00+91.00];
+const ULT = {72:27.4,73:26.5,74:25.5,75:24.6,76:23.7,77:22.9,78:22.0,79:21.1,80:20.2,81:19.4,82:18.5,83:17.7,84:16.8,85:16.0,86:15.2,87:14.4,88:13.7,89:12.9,90:12.2,91:11.5,92:10.8,93:10.1,94:9.5,95:8.9,96:8.4,97:7.8,98:7.3,99:6.8,100:6.4,101:6.0,102:5.6,103:5.2,104:4.9,105:4.6};
+const START_YEAR = 2027;
+
+function calcTax(st, ord, ltcg, ss, n65, defl, calYear, stateRate) {
+  const L = LAW[st];
+  const prov = ord + ltcg + 0.5 * ss, t1 = L.ss[0] * defl, t2 = L.ss[1] * defl;
+  let taxSS = 0;
+  if (prov > t2) taxSS = Math.min(0.85 * ss, 0.85 * (prov - t2) + Math.min(0.5 * ss, 0.5 * (t2 - t1)));
+  else if (prov > t1) taxSS = Math.min(0.5 * ss, 0.5 * (prov - t1));
+  const agi = ord + ltcg + taxSS;
+  let ded = L.std + L.add65 * n65;
+  if (calYear <= 2028 && n65 > 0) ded += n65 * Math.max(0, 6000 * defl - 0.06 * Math.max(0, agi - L.seniorPhase * defl));
+  const taxable = Math.max(0, agi - ded);
+  const ordTaxable = Math.max(0, ord + taxSS - ded);
+  let tax = 0, prev = 0;
+  for (let i = 0; i < L.br.length; i++) {
+    const top = L.br[i][0];
+    if (ordTaxable > prev) tax += (Math.min(ordTaxable, top) - prev) * L.br[i][1]; else break;
+    prev = top;
+  }
+  const g15 = Math.max(0, Math.min(taxable, L.ltcg[1]) - Math.max(ordTaxable, L.ltcg[0]));
+  const g20 = Math.max(0, taxable - Math.max(ordTaxable, L.ltcg[1]));
+  tax += 0.15 * g15 + 0.20 * g20;
+  tax += 0.038 * Math.min(ltcg, Math.max(0, agi - L.niit * defl));
+  tax += stateRate * taxable;
+  return { tax, agi, ordTaxable, taxSS, taxable };
+}
+function bracketRate(st, ordTaxable) {
+  const br = LAW[st].br;
+  if (ordTaxable <= 0) return 0;
+  for (let i = 0; i < br.length; i++) if (ordTaxable <= br[i][0] + 0.5) return br[i][1];
+  return .37;
+}
+function irmaaTier(st, magi) {
+  const th = LAW[st].irmaa; let k = 0;
+  while (k < 5 && magi > th[k]) k++;
+  return k;
+}
+function ssFactor(claim) {
+  const m = Math.round((claim - 67) * 12);
+  if (m >= 0) return 1 + Math.min(m, 36) * (0.08 / 12);
+  const e = -m;
+  return 1 - (Math.min(e, 36) * 5 / 900 + Math.max(0, e - 36) * 5 / 1200);
+}
+function rmdStartAge(age0) { return (START_YEAR - age0) >= 1960 ? 75 : 73; }
+function deathOf(h, opt) {
+  if (h.status !== 'mfj') return null;
+  if (opt && opt.death) return opt.death;
+  return h.dieWho && h.dieWho !== 'none' && h.dieAge > 0 ? { who: h.dieWho, age: h.dieAge } : null;
+}
+function horizon(h, death) {
+  if (h.status !== 'mfj') return h.endAge - h.age1 + 1;
+  if (death && death.who === 'client') return Math.max(2, h.endAge - h.age2 + 1);
+  if (death && death.who === 'spouse') return Math.max(2, h.endAge - h.age1 + 1);
+  return Math.max(2, h.endAge - Math.min(h.age1, h.age2) + 1);
+}
+function firstRmdT(h) {
+  let t = Math.max(0, rmdStartAge(h.age1) - h.age1);
+  if (h.status === 'mfj' && h.pre2 > 0) t = Math.min(t, Math.max(0, rmdStartAge(h.age2) - h.age2));
+  if (h.status === 'mfj' && !(h.pre1 > 0) && h.pre2 > 0) t = Math.max(0, rmdStartAge(h.age2) - h.age2);
+  return t;
+}
+
+/* h: household. opt: {schedule:[..]} or {rule:{b,cap,untilT}}; returns:[..] real returns per year (optional);
+   detail: compute marginal rates; death: {who:'client'|'spouse', age} overrides the household setting.
+   Each spouse owns an IRA with its own RMD clock; a survivor rolls the deceased's IRA into their own. */
+function simulate(h, opt) {
+  const married = h.status === 'mfj';
+  const death = deathOf(h, opt), dIdx = death ? (death.who === 'client' ? 0 : 1) : -1;
+  const N = horizon(h, death);
+  const age0 = [h.age1, married ? h.age2 : 0];
+  const bens = [h.ss1 * ssFactor(h.claim1), married ? h.ss2 * ssFactor(h.claim2) : 0], claims = [h.claim1, h.claim2];
+  const rStart = [rmdStartAge(age0[0]), rmdStartAge(age0[1])];
+  const older = !married || age0[0] >= age0[1] ? 0 : 1, first = opt.order === 'younger' && married ? 1 - older : older;
+  const ord = [first, 1 - first];   // which spouse's IRA funds conversions and discretionary draws first
+  const pre = [h.pre1, married ? h.pre2 : 0];
+  let roth = h.roth, txb = h.taxable, basis = h.taxable * h.basisPct, rolled = false;
+  const rows = [], magiHist = [];
+  let sumTax = 0, sumIrmaa = 0, shortfall = 0, sumConv = 0;
+  const sched = opt.schedule, rule = opt.rule, outSched = new Array(N).fill(0);
+
+  for (let t = 0; t < N; t++) {
+    const a = [age0[0] + t, age0[1] + t];
+    const alive = [true, married];
+    let deathYear = false, decRmd = 0;
+    if (dIdx >= 0 && a[dIdx] >= death.age) {
+      alive[dIdx] = false;
+      if (!rolled) {   // the decedent's RMD for the year of death still has to come out
+        if (a[dIdx] >= rStart[dIdx] && pre[dIdx] > 0) decRmd = pre[dIdx] / (ULT[a[dIdx]] || 4.6);
+        pre[1 - dIdx] += pre[dIdx]; pre[dIdx] = 0; rolled = true; deathYear = true;
+      }
+    }
+    const both = alive[0] && alive[1];
+    const st = both || deathYear ? 'mfj' : 'single';   // a joint return is still filed for the year of death
+    const L = LAW[st];
+    const defl = Math.pow(1 + h.infl, -t), calYear = START_YEAR + t;
+    const spend = h.spend * (married && !both ? h.survivorSpend : 1);
+    let ss = 0;
+    if (both) ss = (a[0] >= claims[0] ? bens[0] : 0) + (a[1] >= claims[1] ? bens[1] : 0);
+    else if (married) { const s = alive[0] ? 0 : 1; ss = Math.max(a[s] >= claims[s] ? bens[s] : 0, bens[1 - s]); }
+    else ss = a[0] >= claims[0] ? bens[0] : 0;
+    const pension = a[0] >= h.pensionAge ? h.pension * (alive[0] ? 1 : 0.5) : 0;
+    const n65 = (alive[0] && a[0] >= 65 ? 1 : 0) + (alive[1] && a[1] >= 65 ? 1 : 0);
+    const tier = n65 > 0 && t >= 2 ? irmaaTier(st, magiHist[t - 2]) : 0;
+    const irmaa = 12 * IRMAA_MO[tier] * n65;
+    const rm = [0, 0];
+    for (let i = 0; i < 2; i++) if (alive[i] && a[i] >= rStart[i] && pre[i] > 0) rm[i] = (pre[i] - (deathYear ? decRmd * (ULT[a[dIdx]] || 4.6) : 0)) / (ULT[a[i]] || 4.6);
+    if (deathYear && decRmd > 0) rm[1 - dIdx] += decRmd;
+    const rmd = rm[0] + rm[1];
+    const qdiv = txb * h.divYield;
+    const gainFrac = txb > 0 ? Math.max(0, 1 - basis / txb) : 0;
+    const preAvail = Math.max(0, pre[0] + pre[1] - rmd);
+    const fixedIn = ss + pension + rmd;
+
+    const taxOf = (C, T, W) => calcTax(st, pension + rmd + W + C, qdiv + T * gainFrac, ss, n65, defl, calYear, h.stateRate);
+    const solve = (C) => {
+      const avail = preAvail - C;
+      const need = (T, W) => spend + irmaa + taxOf(C, T, W).tax - fixedIn;
+      let T = 0, W = 0, R = 0, sf = 0, surplus = 0;
+      const n0 = need(0, 0);
+      if (n0 <= 0) surplus = -n0;
+      else if (txb - need(txb, 0) >= 0) {
+        let lo = 0, hi = txb;
+        for (let i = 0; i < 26; i++) { const m = (lo + hi) / 2; if (m - need(m, 0) >= 0) hi = m; else lo = m; }
+        T = hi;
+      } else {
+        T = txb;
+        if (T + avail - need(T, avail) >= 0) {
+          let lo = 0, hi = avail;
+          for (let i = 0; i < 26; i++) { const m = (lo + hi) / 2; if (T + m - need(T, m) >= 0) hi = m; else lo = m; }
+          W = hi;
+        } else {
+          W = avail;
+          const rem = need(T, W) - T - W;
+          R = Math.min(roth, rem); sf = rem - R;
+        }
+      }
+      return { T, W, R, sf, surplus, tx: taxOf(C, T, W) };
+    };
+
+    let C = 0, s;
+    if (sched) { C = Math.min(sched[t] || 0, preAvail); s = solve(C); }
+    else if (rule && t < rule.untilT && preAvail > 0) {
+      const top = L.br[rule.b][0];
+      const capOn = rule.cap >= 0 && ((alive[0] && a[0] >= 63) || (alive[1] && a[1] >= 63));
+      const ok = (x) => { const r = solve(x); return r.tx.ordTaxable <= top && (!capOn || r.tx.agi <= L.irmaa[rule.cap]) && r.sf <= 0; };
+      if (ok(0)) {
+        if (ok(preAvail)) C = preAvail;
+        else { let lo = 0, hi = preAvail; for (let i = 0; i < 20; i++) { const m = (lo + hi) / 2; if (ok(m)) lo = m; else hi = m; } C = lo; }
+        if (C < 500) C = 0;
+      }
+      s = solve(C);
+    } else s = solve(0);
+    outSched[t] = C;
+
+    let marg = 0;
+    if (opt.detail) marg = (calcTax(st, pension + rmd + s.W + C + 1000, qdiv + s.T * gainFrac, ss, n65, defl, calYear, h.stateRate).tax - s.tx.tax) / 1000;
+    magiHist.push(s.tx.agi);
+    sumTax += s.tx.tax; sumIrmaa += irmaa; shortfall += s.sf; sumConv += C;
+
+    let X = s.W + C;
+    for (const i of ord) { const room = Math.max(0, pre[i] - rm[i]), take = Math.min(X, room); pre[i] = Math.max(0, pre[i] - rm[i] - take); X -= take; }
+    roth += C - s.R;
+    basis += qdiv;
+    if (s.T > 0) { basis -= s.T * (1 - gainFrac); txb -= s.T; }
+    if (s.surplus > 0) { txb += s.surplus; basis += s.surplus; }
+    if (txb < 1e-6) { txb = 0; basis = 0; }
+    const r = opt.returns ? opt.returns[t] : h.ret;
+    pre[0] *= 1 + r; pre[1] *= 1 + r; roth *= 1 + r; txb *= 1 + r;
+
+    if (opt.detail || opt.track) rows.push({ t, age: a[0], lab: !married ? '' + a[0] : (alive[0] ? a[0] : '†') + ' / ' + (alive[1] ? a[1] : '†'),
+      year: calYear, st, ss, pension, rmd, rmd1: rm[0], rmd2: rm[1], conv: C, wPre: s.W, wTax: s.T, wRoth: s.R,
+      tax: s.tx.tax, irmaa, tier, agi: s.tx.agi, ordTaxable: s.tx.ordTaxable, taxSS: s.tx.taxSS, marg,
+      bracket: bracketRate(st, s.tx.ordTaxable), pre: pre[0] + pre[1], pre1: pre[0], pre2: pre[1], roth, txb, total: pre[0] + pre[1] + roth + txb, sf: s.sf, spend });
+  }
+  const endPre = pre[0] + pre[1], heirTax = endPre * h.heirRate;
+  const wealth = roth + txb + endPre - heirTax;
+  return { rows, schedule: outSched, wealth, score: wealth - 5 * shortfall, lifeTax: sumTax + sumIrmaa + heirTax,
+    sumTax, sumIrmaa, heirTax, shortfall, sumConv, endPre, endRoth: roth, endTxb: txb, rmdT: firstRmdT(h), N };
+}
+
+const BR_NAMES = ['10%', '12%', '22%', '24%', '32%'];
+function ruleLabel(r) {
+  let s = 'fill the ' + BR_NAMES[r.b] + ' bracket';
+  if (r.cap === 0) s += ', staying under the first IRMAA threshold';
+  else if (r.cap === 1) s += ', accepting at most the first IRMAA tier';
+  return s;
+}
+function optimizeOrder(h, order) {
+  const base = simulate(h, { schedule: [], detail: true, order: 'older' });
+  const rmdT = base.rmdT;
+  const cands = [];
+  for (let b = 0; b < 5; b++) for (const cap of [-1, 0, 1]) for (const untilT of [rmdT, base.N + 1]) {
+    const rule = { b, cap, untilT };
+    const r = simulate(h, { rule, order });
+    cands.push({ rule, score: r.score, wealth: r.wealth, schedule: r.schedule, sumConv: r.sumConv });
+  }
+  cands.sort((a, b) => b.score - a.score);
+  const bestRule = cands[0];
+  const none = simulate(h, { schedule: [], order }).score;
+  let sched = (bestRule.score <= none + 1 ? base.schedule : bestRule.schedule).map(x => Math.round(x / 1000) * 1000);
+  let cur = simulate(h, { schedule: sched, order }).score, evals = 32;
+  for (const step of [20000, 5000, 1000]) {
+    for (let pass = 0; pass < 2; pass++) {
+      let improved = false;
+      for (let t = 0; t < sched.length; t++) {
+        for (const dir of [1, -1]) {
+          for (;;) {
+            const old = sched[t], nv = old + dir * step;
+            if (nv < 0) break;
+            sched[t] = nv;
+            const sc = simulate(h, { schedule: sched, order }).score; evals++;
+            if (sc > cur + 1) { cur = sc; improved = true; } else { sched[t] = old; break; }
+          }
+        }
+      }
+      if (!improved) break;
+    }
+  }
+  const plan = simulate(h, { schedule: sched, detail: true, order });
+  const ruleRun = simulate(h, { schedule: bestRule.schedule, order });
+  return { base, plan, bestRule, ruleRun, cands, evals, order };
+}
+function optimize(h) {
+  const a = optimizeOrder(h, 'older');
+  if (!(h.status === 'mfj' && h.pre1 > 0 && h.pre2 > 0 && h.age1 !== h.age2)) return a;
+  const b = optimizeOrder(h, 'younger');
+  const win = b.plan.score > a.plan.score + 500 ? b : a, lose = win === a ? b : a;
+  win.evals = a.evals + b.evals; win.orderEdge = win.plan.score - lose.plan.score; win.orderTested = true;
+  return win;
+}
+
+/* Monte Carlo: same return paths for baseline and plan */
+function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function mcPaths(h, n, seed) {
+  const N = horizon(h, deathOf(h)), rnd = mulberry32(seed || 7);
+  const s2 = Math.log(1 + (h.vol * h.vol) / Math.pow(1 + h.ret, 2)), s = Math.sqrt(s2), m = Math.log(1 + h.ret) - s2 / 2;
+  const paths = [];
+  for (let i = 0; i < n; i++) {
+    const p = new Array(N);
+    for (let t = 0; t < N; t++) { const u = Math.max(rnd(), 1e-12), v = rnd(); p[t] = Math.exp(m + s * Math.sqrt(-2 * Math.log(u)) * Math.cos(6.283185307 * v)) - 1; }
+    paths.push(p);
+  }
+  return paths;
+}
+function mcSummarize(h, res) {
+  const n = res.length, N = res[0].p.rows.length;
+  const q = (arr, p) => { const a = arr.slice().sort((x, y) => x - y); return a[Math.min(a.length - 1, Math.floor(p * a.length))]; };
+  const out = { n, succBase: 0, succPlan: 0, wins: 0, fan: [] };
+  const wb = [], wp = [];
+  for (const r of res) { if (r.b.shortfall < 1) out.succBase++; if (r.p.shortfall < 1) out.succPlan++; if (r.p.score > r.b.score) out.wins++; wb.push(r.b.wealth); wp.push(r.p.wealth); }
+  out.succBase /= n; out.succPlan /= n; out.wins /= n;
+  out.wBase = [q(wb, .1), q(wb, .5), q(wb, .9)]; out.wPlan = [q(wp, .1), q(wp, .5), q(wp, .9)];
+  for (let t = 0; t < N; t++) {
+    const col = res.map(r => r.p.rows[t].total), colB = res.map(r => r.b.rows[t].total);
+    out.fan.push({ year: res[0].p.rows[t].year, age: res[0].p.rows[t].age, lab: res[0].p.rows[t].lab, p10: q(col, .1), p50: q(col, .5), p90: q(col, .9), b50: q(colB, .5) });
+  }
+  return out;
+}
+if (typeof module !== 'undefined') module.exports = { calcTax, simulate, optimize, mcPaths, mcSummarize, ssFactor, LAW, ruleLabel };
+
+</script>
+<script>
+const $ = (id) => document.getElementById(id);
+const PRESETS = [
+  { name: 'Tax-deferred couple', h: { status: 'mfj', age1: 62, age2: 60, endAge: 95, pre1: 1900000, pre2: 500000, roth: 150000, taxable: 650000, basisPct: .6, spend: 135000, ss1: 42000, claim1: 70, ss2: 24000, claim2: 67, pension: 0, pensionAge: 65, ret: .04, vol: .11, infl: .025, heirRate: .24, stateRate: 0, dieWho: 'none', dieAge: 82 } },
+  { name: 'Single, 64', h: { status: 'single', age1: 64, age2: 62, endAge: 95, pre1: 1300000, pre2: 0, roth: 80000, taxable: 250000, basisPct: .7, spend: 78000, ss1: 34000, claim1: 67, ss2: 0, claim2: 67, pension: 0, pensionAge: 65, ret: .04, vol: .11, infl: .025, heirRate: .22, stateRate: 0, dieWho: 'none', dieAge: 82 } },
+  { name: 'Early retirees, 56', h: { status: 'mfj', age1: 56, age2: 55, endAge: 95, pre1: 1100000, pre2: 700000, roth: 100000, taxable: 1400000, basisPct: .55, spend: 150000, ss1: 40000, claim1: 67, ss2: 30000, claim2: 67, pension: 0, pensionAge: 65, ret: .04, vol: .11, infl: .025, heirRate: .24, stateRate: 0, dieWho: 'none', dieAge: 82 } },
+  { name: 'Older saver, 8-yr gap', h: { status: 'mfj', age1: 68, age2: 60, endAge: 95, pre1: 3000000, pre2: 600000, roth: 0, taxable: 400000, basisPct: .8, spend: 170000, ss1: 44000, claim1: 70, ss2: 36000, claim2: 70, pension: 48000, pensionAge: 66, ret: .04, vol: .11, infl: .025, heirRate: .32, stateRate: 0, dieWho: 'none', dieAge: 82 } }
+];
+const FIELDS = [
+  ['Household'], ['status', 'Filing status', 'sel', [['mfj','Married, joint'],['single','Single']]], ['endAge', 'Plan to age'], ['age1', 'Client age'], ['age2', 'Spouse age', 'sp'],
+  ['Portfolio'], ['pre1', 'Client pre-tax (IRA, 401k) $'], ['pre2', 'Spouse pre-tax $', 'sp'], ['roth', 'Roth $'], ['taxable', 'Taxable $'], ['basisPct', 'Taxable cost basis %', 'pct'],
+  ['Cash flow, today\'s dollars'], ['spend', 'Annual spending $'], ['pension', 'Pension $ / yr'], ['ss1', 'Client SS at 67 $ / yr'], ['claim1', 'Client claims at'], ['ss2', 'Spouse SS at 67 $ / yr', 'sp'], ['claim2', 'Spouse claims at', 'sp'],
+  ['Assumptions'], ['ret', 'Real return %', 'pct'], ['vol', 'Volatility %', 'pct'], ['infl', 'Inflation %', 'pct'], ['heirRate', 'Heirs\' tax rate %', 'pct'], ['stateRate', 'State income tax %', 'pct'], ['dieWho', 'First death', 'selsp', [['none','Neither dies early'],['client','Client dies first'],['spouse','Spouse dies first']]], ['dieAge', 'First death at age', 'sp']
+];
+let H = null, R = null, MC = null, view = 'plan', memoMode = 'client', runId = 0, presetIdx = 0;
+
+const fK = (v) => { const a = Math.abs(v), s = v < 0 ? '-' : ''; return a >= 999500 ? s + '$' + (a / 1e6).toFixed(a >= 9995000 ? 1 : 2) + 'M' : a >= 1000 ? s + '$' + Math.round(a / 1000) + 'K' : s + '$' + Math.round(a); };
+const fD = (v) => (v < 0 ? '-$' : '$') + Math.round(Math.abs(v)).toLocaleString('en-US');
+const fP = (v, d) => (v * 100).toFixed(d || 0) + '%';
+const fAx = (v) => v >= 1e6 ? '$' + +(v / 1e6).toFixed(2) + 'M' : v >= 1000 ? '$' + Math.round(v / 1000) + 'K' : '$' + Math.round(v);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+/* ---------- form ---------- */
+function buildForm() {
+  $('form').innerHTML = FIELDS.map((f) => {
+    if (f.length === 1) return '<div class="full">' + esc(f[0]) + '</div>';
+    const [k, label, kind] = f, sp = kind === 'sp' ? ' data-sp="1"' : '';
+    if (kind === 'sel' || kind === 'selsp') return '<label' + (kind === 'selsp' ? ' data-sp="1"' : '') + '>' + label + '<select id="f-' + k + '">' + f[3].map((o) => '<option value="' + o[0] + '">' + o[1] + '</option>').join('') + '</select></label>';
+    return '<label' + sp + '>' + esc(label) + '<input id="f-' + k + '" type="number" inputmode="decimal" step="any" data-kind="' + (kind || '') + '"></label>';
+  }).join('');
+  $('form').addEventListener('change', () => { readForm(); markPreset(-1); run(); });
+}
+function fillForm() {
+  for (const f of FIELDS) { if (f.length === 1) continue; const el = $('f-' + f[0]); const v = H[f[0]]; el.value = f[2] === 'pct' ? +(v * 100).toFixed(2) : v; }
+  spouseVis();
+}
+function spouseVis() { document.querySelectorAll('[data-sp]').forEach((e) => { e.style.display = H.status === 'mfj' ? '' : 'none'; }); }
+function readForm() {
+  for (const f of FIELDS) {
+    if (f.length === 1) continue; const el = $('f-' + f[0]);
+    if (f[2] === 'sel' || f[2] === 'selsp') { H[f[0]] = el.value; continue; }
+    let v = parseFloat(el.value); if (!isFinite(v) || v < 0) v = 0;
+    H[f[0]] = f[2] === 'pct' ? v / 100 : v;
+  }
+  H.age1 = Math.min(90, Math.max(40, Math.round(H.age1))); H.age2 = Math.min(95, Math.max(30, Math.round(H.age2)));
+  H.endAge = Math.min(105, Math.max(H.age1 + 5, Math.round(H.endAge)));
+  H.claim1 = Math.min(70, Math.max(62, H.claim1)); H.claim2 = Math.min(70, Math.max(62, H.claim2));
+  H.basisPct = Math.min(1, H.basisPct); H.heirRate = Math.min(.6, H.heirRate); H.ret = Math.min(.12, H.ret); H.dieAge = Math.round(H.dieAge); if (H.status !== 'mfj') H.pre2 = 0;
+  fillForm();
+}
+function markPreset(i) { presetIdx = i; document.querySelectorAll('#presets button').forEach((b, j) => b.setAttribute('aria-pressed', j === i ? 'true' : 'false')); }
+function loadPreset(i) { H = Object.assign({ divYield: .018, survivorSpend: .8 }, PRESETS[i].h); markPreset(i); fillForm(); run(); }
+
+/* ---------- charts ---------- */
+function nice(v) { if (v <= 0) return 1; const p = Math.pow(10, Math.floor(Math.log10(v))), f = v / p; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 4 ? 4 : f <= 5 ? 5 : f <= 8 ? 8 : 10) * p; }
+function chart(id, rid, cfg) {
+  const W = 360, Hh = cfg.h || 180, m = { l: 44, r: 6, t: 8, b: 20 }, n = cfg.ages.length;
+  const pw = W - m.l - m.r, ph = Hh - m.t - m.b, bw = pw / n, ymax = cfg.ymax;
+  const sc = { x: (i) => m.l + (i + .5) * bw, x0: (i) => m.l + i * bw, y: (v) => m.t + ph - Math.min(1, Math.max(0, v / ymax)) * ph, bw, base: m.t + ph };
+  let s = '<svg viewBox="0 0 ' + W + ' ' + Hh + '" role="img" tabindex="0" aria-label="' + esc(cfg.label) + '">';
+  for (let k = 0; k <= 4; k++) { const v = ymax * k / 4, y = sc.y(v); s += '<line x1="' + m.l + '" x2="' + (W - m.r) + '" y1="' + y + '" y2="' + y + '" stroke="var(--' + (k ? 'line' : 'axis') + ')" stroke-width="1"/><text x="' + (m.l - 5) + '" y="' + (y + 3.5) + '" text-anchor="end">' + cfg.yfmt(v) + '</text>'; }
+  for (let i = 0; i < n; i++) if (cfg.ages[i] % 5 === 0) s += '<text x="' + sc.x(i) + '" y="' + (Hh - 5) + '" text-anchor="middle">' + cfg.ages[i] + '</text>';
+  s += cfg.draw(sc) + '<line class="xh" y1="' + m.t + '" y2="' + sc.base + '" stroke="var(--ink2)" stroke-width="1" stroke-dasharray="2 2"/></svg>';
+  const el = $(id); el.innerHTML = s;
+  const svg = el.firstChild, xh = svg.querySelector('.xh');
+  const pick = (i) => { i = Math.max(0, Math.min(n - 1, i)); xh.setAttribute('x1', sc.x(i)); xh.setAttribute('x2', sc.x(i)); $(rid).innerHTML = cfg.readout(i); svg._i = i; };
+  const fromEv = (e) => { const r = svg.getBoundingClientRect(); pick(Math.floor(((e.clientX - r.left) / r.width * W - m.l) / bw)); };
+  svg.addEventListener('pointermove', fromEv); svg.addEventListener('pointerdown', fromEv);
+  svg.addEventListener('keydown', (e) => { if (e.key === 'ArrowRight') pick(svg._i + 1); else if (e.key === 'ArrowLeft') pick(svg._i - 1); });
+  pick(cfg.start || 0);
+}
+const stepPath = (vals, sc) => vals.map((v, i) => (i ? 'L' : 'M') + sc.x0(i).toFixed(1) + ' ' + sc.y(v).toFixed(1) + 'H' + sc.x0(i + 1).toFixed(1)).join('');
+const linePath = (vals, sc) => vals.map((v, i) => (i ? 'L' : 'M') + sc.x(i).toFixed(1) + ' ' + sc.y(v).toFixed(1)).join('');
+
+function drawAll() {
+  const P = R.plan.rows, B = R.base.rows, ages = P.map((r) => r.year);
+  // 1 conversions
+  const cmax = nice(Math.max(10000, ...P.map((r) => r.conv)));
+  const firstConv = Math.max(0, P.findIndex((r) => r.conv > 0));
+  chart('c-conv', 'r-conv', { ages, ymax: cmax, yfmt: fAx, label: 'Roth conversion amount by year', start: firstConv,
+    draw: (sc) => P.map((r, i) => r.conv > 0 ? '<rect x="' + (sc.x0(i) + 1) + '" width="' + Math.max(1, sc.bw - 2) + '" y="' + sc.y(r.conv) + '" height="' + (sc.base - sc.y(r.conv)) + '" rx="2" fill="var(--pre)"/>' : '').join(''),
+    readout: (i) => { const r = P[i]; return '<b>' + r.year + ' · age ' + r.lab + '</b> · convert <b>' + fD(r.conv) + '</b><br>Federal tax ' + fD(r.tax) + ' · tops out in the ' + fP(r.bracket) + ' bracket' + (r.irmaa > 0 ? ' · IRMAA ' + fD(r.irmaa) : '') + (r.rmd > 0 ? ' · RMDs ' + fD(r.rmd) : ''); } });
+  // 2 marginal
+  chart('c-marg', 'r-marg', { ages, ymax: .6, yfmt: (v) => fP(v), label: 'Marginal federal tax rate by year, plan versus doing nothing', start: Math.min(ages.length - 1, Math.max(0, R.base.rmdT + 2)),
+    draw: (sc) => '<path d="' + stepPath(B.map((r) => r.marg), sc) + '" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4 3"/><path d="' + stepPath(P.map((r) => r.marg), sc) + '" fill="none" stroke="var(--pre)" stroke-width="2"/>',
+    readout: (i) => '<b>' + P[i].year + ' · age ' + P[i].lab + '</b> · the next $1,000 of IRA income is taxed at <b>' + fP(P[i].marg, 1) + '</b> with the plan, <b>' + fP(B[i].marg, 1) + '</b> doing nothing<br>Statutory bracket: ' + fP(P[i].bracket) + ' vs ' + fP(B[i].bracket) + (B[i].marg > B[i].bracket + .04 ? ' · the gap is Social Security or capital gains being pulled into tax' : '') });
+  drawBal(); drawMC();
+}
+function drawBal() {
+  const rows = R[view].rows, ages = rows.map((r) => r.year), M = H.status === 'mfj';
+  const ymax = nice(Math.max(...R.plan.rows.map((r) => r.total), ...R.base.rows.map((r) => r.total)));
+  const keys = [['pre', '--pre'], ['txb', '--txb'], ['roth', '--roth']];
+  chart('c-bal', 'r-bal', { ages, ymax, yfmt: fAx, label: 'End-of-year balances by account type', start: Math.min(rows.length - 1, 13),
+    draw: (sc) => { let lo = rows.map(() => 0), s = ''; for (const [k, c] of keys) { const hi = rows.map((r, i) => lo[i] + r[k]); s += '<path d="' + linePath(hi, sc) + lo.map((v, j, a) => { const i = a.length - 1 - j; return 'L' + sc.x(i).toFixed(1) + ' ' + sc.y(a[i]).toFixed(1); }).join('') + 'Z" fill="var(' + c + ')" stroke="var(--surface)" stroke-width="1.5" stroke-linejoin="round"/>'; lo = hi; } return s; },
+    readout: (i) => { const r = rows[i]; return '<b>' + r.year + ' · age ' + r.lab + '</b> · total <b>' + fK(r.total) + '</b><br>' + (M ? 'Client IRA ' + fK(r.pre1) + ' · Spouse IRA ' + fK(r.pre2) : 'Pre-tax ' + fK(r.pre)) + ' · Taxable ' + fK(r.txb) + ' · Roth ' + fK(r.roth); } });
+  const head = ['Year', M ? 'Ages' : 'Age', 'Convert'].concat(M ? ['RMD client', 'RMD spouse'] : ['RMD'], ['Other IRA draw', 'From taxable', 'From Roth', 'Fed tax', 'Bracket', 'Next $', 'IRMAA'], M ? ['Client IRA', 'Spouse IRA'] : ['Pre-tax'], ['Taxable', 'Roth']);
+  const dz = (v) => v > 0 ? fD(v) : '–';
+  $('tbl').innerHTML = '<thead><tr>' + head.map((x) => '<th>' + x + '</th>').join('') + '</tr></thead><tbody>' + rows.map((r) => '<tr><td>' + r.year + '</td><td>' + r.lab + '</td><td class="' + (r.conv > 0 ? 'hi' : '') + '">' + (r.conv > 0 ? fD(r.conv) : '–') + '</td><td>' + (M ? dz(r.rmd1) + '</td><td>' + dz(r.rmd2) : dz(r.rmd)) + '</td><td>' + (r.wPre > 0 ? fD(r.wPre) : '–') + '</td><td>' + (r.wTax > 0 ? fD(r.wTax) : '–') + '</td><td>' + (r.wRoth > 0 ? fD(r.wRoth) : '–') + '</td><td>' + fD(r.tax) + '</td><td>' + fP(r.bracket) + '</td><td>' + fP(r.marg, 1) + '</td><td>' + (r.tier ? '<span class="pill ' + (r.tier > 1 ? 'c' : 'w') + '">Tier ' + r.tier + '</span> ' + fD(r.irmaa) : '–') + '</td><td>' + (M ? fK(r.pre1) + '</td><td>' + fK(r.pre2) : fK(r.pre)) + '</td><td>' + fK(r.txb) + '</td><td>' + fK(r.roth) + '</td></tr>').join('') + '</tbody>';
+}
+function drawMC() {
+  if (!MC) { $('c-mc').innerHTML = '<svg viewBox="0 0 360 180" role="img" aria-label="Simulation running"></svg>'; $('r-mc').textContent = 'Running 400 market paths…'; return; }
+  const F = MC.fan, ages = F.map((f) => f.year), ymax = nice(Math.max(...F.map((f) => f.p90)));
+  chart('c-mc', 'r-mc', { ages, ymax, yfmt: fAx, label: 'Range of total portfolio value across 400 simulated markets', start: F.length - 1,
+    draw: (sc) => '<path d="' + linePath(F.map((f) => f.p90), sc) + F.map((v, j, a) => { const i = a.length - 1 - j; return 'L' + sc.x(i).toFixed(1) + ' ' + sc.y(a[i].p10).toFixed(1); }).join('') + 'Z" fill="var(--pre)" opacity=".22"/><path d="' + linePath(F.map((f) => f.b50), sc) + '" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4 3"/><path d="' + linePath(F.map((f) => f.p50), sc) + '" fill="none" stroke="var(--pre)" stroke-width="2"/>',
+    readout: (i) => { const f = F[i]; return '<b>' + f.year + ' · age ' + f.lab + '</b> · plan median <b>' + fK(f.p50) + '</b>, range ' + fK(f.p10) + ' to ' + fK(f.p90) + '<br>Do-nothing median ' + fK(f.b50) + '. These are balances before tax, so the plan’s edge is larger than the lines suggest.'; } });
+}
+
+/* ---------- findings + verdict ---------- */
+function analyze() {
+  const P = R.plan, B = R.base, out = [], M = H.status === 'mfj', rmdYear = START_YEAR + B.rmdT, gain = P.score - B.score;
+  if (R.noop) {
+    const now = B.rows[0].marg, fut = B.rows.slice(1), later = fut.length ? Math.max(...fut.map((r) => r.marg)) : 0;
+    out.push({ sev: 'good', tag: 'Why not convert', t: 'A conversion costs ' + fP(now, 1) + ' today', b: 'That is the federal rate on the next $1,000 of IRA income this year. Left alone, IRA dollars come out at ' + fP(later, 1) + ' at most in later years, and heirs pay ' + fP(H.heirRate) + '. The gap is too small, or the time too short, to earn back tax paid up front. No schedule cleared a ' + fK(Math.max(5000, .001 * (H.pre1 + H.pre2 + H.roth + H.taxable))) + ' gain.' });
+    const pk0 = B.rows.reduce((a, r) => r.rmd > a.rmd ? r : a, B.rows[0]);
+    if (pk0.rmd > 0) out.push({ sev: 'warn', tag: 'RMDs', t: 'Forced withdrawals peak at ' + fK(pk0.rmd) + ' a year', b: 'The peak comes in ' + pk0.year + ' and lands in the ' + fP(pk0.bracket) + ' bracket. Converting ahead of it does not pay here, but a QCD (a gift to charity straight from the IRA after 70½) would, if the client gives.' });
+    if (B.sumIrmaa > 500) out.push({ sev: 'warn', tag: 'IRMAA', t: fK(B.sumIrmaa) + ' of Medicare surcharges over the plan', b: 'IRMAA is the income-based surcharge on Medicare Parts B and D, set by income from two years earlier. It applies in ' + B.rows.filter((r) => r.tier > 0).length + ' years on this path.' });
+    if (B.shortfall > 1) out.push({ sev: 'crit', tag: 'Funding', t: 'The portfolio runs out at the assumed return', b: 'Spending is not fully funded through the plan. Fix the spending or return assumption first.' });
+    return out;
+  }
+  const L12 = (st) => LAW[st].br[1][0];
+  const pre = B.rows.filter((r) => r.t < B.rmdT);
+  const idle = pre.filter((r) => r.bracket <= .10), room = pre.reduce((a, r) => a + Math.max(0, L12(r.st) - r.ordTaxable), 0);
+  if (idle.length >= 2) out.push({ sev: 'crit', tag: 'Wasted brackets', t: idle.length + ' low-tax years go unused', b: 'Doing nothing, taxable ordinary income sits at or near zero from ' + idle[0].year + ' to ' + idle[idle.length - 1].year + '. That leaves ' + fK(room) + ' of 10% and 12% bracket space on the table before the first RMD in ' + rmdYear + '.' });
+  const r1 = B.rows.find((r) => r.rmd > 0), pk = B.rows.reduce((a, r) => r.rmd > a.rmd ? r : a, B.rows[0]), pp = P.rows.reduce((a, r) => r.rmd > a.rmd ? r : a, P.rows[0]);
+  if (r1) out.push({ sev: pk.bracket >= .24 ? 'crit' : 'warn', tag: 'RMDs', t: 'Forced withdrawals peak at ' + fK(pk.rmd) + ' a year', b: 'The first RMD in ' + r1.year + ' is ' + fD(r1.rmd) + ' and the household total climbs to ' + fD(pk.rmd) + ' by ' + pk.year + ', which lands in the ' + fP(pk.bracket) + ' bracket whether the cash is needed or not. With the plan the peak is ' + fD(pp.rmd) + '.' });
+  if (M && H.pre1 > 0 && H.pre2 > 0) {
+    const c1 = B.rows.find((r) => r.rmd1 > 0), c2 = B.rows.find((r) => r.rmd2 > 0);
+    const pooled = Object.assign({}, H, { pre1: H.pre1 + H.pre2, pre2: 0 });
+    const pg = simulate(pooled, { schedule: P.schedule }).score - simulate(pooled, { schedule: [] }).score;
+    if (c1 && c2) { const gap = Math.abs(c2.year - c1.year), first = c1.year <= c2.year ? 'client' : 'spouse', fr = c1.year <= c2.year ? c1 : c2;
+      out.push({ sev: 'warn', tag: 'Two RMD clocks', t: gap ? 'The ' + first + '’s IRA is forced out ' + gap + ' year' + (gap > 1 ? 's' : '') + ' before the other' : 'Both IRAs start RMDs in ' + c1.year, b: 'Client RMDs start in ' + c1.year + ' at ' + fD(c1.rmd1) + '. Spouse RMDs start in ' + c2.year + ' at ' + fD(c2.rmd2) + '. ' + 'Treating the two IRAs as one account on the client’s clock would put this plan’s value at ' + fK(pg) + ' against ' + fK(gain) + ' modeled separately. ' + (R.orderTested ? 'The engine tried converting from each IRA first. Starting with the ' + R.order + ' spouse’s IRA won by ' + fK(R.orderEdge) + '.' : 'Conversions come from the older spouse’s IRA first.') }); }
+  }
+  const torp = B.rows.filter((r) => r.ss > 0 && r.marg > r.bracket + .04);
+  if (torp.length) { const mx = torp.reduce((a, r) => r.marg > a.marg ? r : a, torp[0]); const pt = P.rows.filter((r) => r.ss > 0 && r.marg > r.bracket + .04).length;
+    out.push({ sev: 'warn', tag: 'Tax torpedo', t: 'A hidden ' + fP(mx.marg, 1) + ' rate at age ' + mx.age, b: 'In ' + torp.length + ' do-nothing year' + (torp.length > 1 ? 's' : '') + ', each extra IRA dollar also drags more Social Security or capital gains into tax, so the true rate runs above the ' + fP(mx.bracket) + ' bracket. The plan has ' + pt + ' such year' + (pt === 1 ? '' : 's') + '.' }); }
+  if (B.sumIrmaa > 500 || P.sumIrmaa > 500) out.push({ sev: P.sumIrmaa > B.sumIrmaa ? 'warn' : 'good', tag: 'IRMAA', t: 'Medicare surcharges: ' + fK(B.sumIrmaa) + ' doing nothing, ' + fK(P.sumIrmaa) + ' with the plan', b: 'IRMAA is the income-based surcharge on Medicare Parts B and D, set by income from two years earlier. ' + (P.sumIrmaa > 0 ? 'The plan still pays a surcharge in ' + P.rows.filter((r) => r.tier > 0).length + ' year' + (P.rows.filter((r) => r.tier > 0).length > 1 ? 's' : '') + ', against ' + B.rows.filter((r) => r.tier > 0).length + ' doing nothing. Where it does, the engine judged the conversion worth more than the surcharge.' : 'The plan stays under the first threshold every year.') });
+  if (M && H.dieWho === 'none') {
+    const who = H.age1 >= H.age2 ? 'client' : 'spouse', a0 = who === 'client' ? H.age1 : H.age2, d = Math.max(a0 + 8, 82);
+    const death = { who, age: d };
+    const sb = simulate(H, { schedule: [], detail: true, death, order: 'older' }), sp = simulate(H, { schedule: P.schedule, detail: true, death, order: R.order });
+    const sing = (x) => x.rows.filter((r) => r.st === 'single'), mx = (x) => sing(x).length ? Math.max(...sing(x).map((r) => r.bracket)) : 0;
+    const mxb = mx(sb), mxp = mx(sp), yrs = sing(sb).length;
+    R.surv = { d, who, gain: sp.score - sb.score, mxb, mxp, yrs };
+    out.push({ sev: mxb > mxp ? 'crit' : 'warn', tag: 'Survivor stress test', t: 'If the ' + who + ' dies at ' + d + ', the plan is worth ' + fK(sp.score - sb.score), b: 'The older spouse dies first here. The survivor inherits both IRAs, takes RMDs on the combined balance at their own age, and files single for ' + yrs + ' years with brackets half as wide. Doing nothing, the survivor reaches the ' + fP(mxb) + ' bracket. With the plan, ' + fP(mxp) + '. That compares with ' + fK(gain) + ' when both live. Set a first death under Edit to plan around it.' });
+  }
+  if (B.endPre > 1000) out.push({ sev: 'good', tag: 'Heirs', t: fK(B.endPre) + ' of pre-tax left to heirs falls to ' + fK(P.endPre), b: 'At a ' + fP(H.heirRate) + ' heir rate, the do-nothing path hands over a ' + fK(B.heirTax) + ' tax bill inside the IRA. The plan leaves ' + fK(P.endRoth) + ' in Roth instead.' });
+  if (B.shortfall > 1) out.push({ sev: 'crit', tag: 'Funding', t: 'The portfolio runs out at the assumed return', b: 'Spending is not fully funded through the plan even before taxes are optimized. Fix the spending or return assumption first.' });
+  return out;
+}
+function mcFinding() {
+  if (!MC) return '';
+  if (R.noop) return fHTML({ sev: MC.succBase < .85 ? 'warn' : 'good', tag: 'Market stress test', t: 'Spending is fully funded in ' + fP(MC.succBase) + ' of 400 markets', b: 'Median after-tax wealth in the final year is ' + fK(MC.wBase[1]) + ', with a range of ' + fK(MC.wBase[0]) + ' to ' + fK(MC.wBase[2]) + ' between the 10th and 90th percentile.' });
+  const d = MC.succPlan - MC.succBase;
+  const sev = d < -.005 ? 'warn' : 'good';
+  const b = d < -.005 ? 'Success means spending is fully funded through ' + R.plan.rows[R.plan.rows.length - 1].year + '. The plan funds it in ' + fP(MC.succPlan, 1) + ' of markets against ' + fP(MC.succBase, 1) + ' doing nothing. Converting prepays tax, and in the worst markets that tax was paid on growth that never arrived. The fix is to re-run each January and convert on that year’s balances, which a fixed schedule cannot do.'
+    : 'Spending is fully funded through ' + R.plan.rows[R.plan.rows.length - 1].year + ' in ' + fP(MC.succPlan, 1) + ' of markets with the plan and ' + fP(MC.succBase, 1) + ' doing nothing. Median after-tax wealth: ' + fK(MC.wPlan[1]) + ' against ' + fK(MC.wBase[1]) + '.';
+  return fHTML({ sev, tag: 'Market stress test', t: 'The plan comes out ahead in ' + fP(MC.wins) + ' of 400 markets', b });
+}
+const SEVW = { crit: 'Act on this', warn: 'Watch', good: 'Working' };
+const fHTML = (f) => '<div class="f ' + f.sev + '"><span class="tag">' + SEVW[f.sev] + ' · ' + esc(f.tag) + '</span><b>' + esc(f.t) + '</b><p>' + esc(f.b) + '</p></div>';
+function convWindow() {
+  const c = R.plan.rows.filter((r) => r.conv > 0); if (!c.length) return null;
+  const tot = c.reduce((a, r) => a + r.conv, 0); let run = 0, k = 0;
+  while (k < c.length && run < .85 * tot) run += c[k++].conv;
+  return { n: c.length, y0: c[0].year, y1: c[c.length - 1].year, top: c.reduce((a, r) => r.conv > a.conv ? r : a, c[0]), coreN: k, coreY: c[k - 1].year, share: run / tot };
+}
+function renderVerdict() {
+  const P = R.plan, B = R.base, d = P.wealth - B.wealth, w = convWindow(), extra = P.score - R.ruleRun.score, endY = P.rows[P.rows.length - 1].year;
+  let h;
+  if (B.shortfall > 1) h = '<h2>Verdict</h2><div class="hero">Fix the funding first<small>At the assumed return, this household runs out of money before ' + endY + '.</small></div><p class="sub">Doing nothing leaves ' + fK(B.shortfall) + ' of planned spending unfunded. ' + (P.shortfall < B.shortfall - 1000 ? 'Tax planning closes ' + fK(B.shortfall - P.shortfall) + ' of that, which is not enough. ' : '') + 'Lower the spending, raise the return assumption, or delay retirement, then look at conversions.</p>';
+  else if (R.noop || !w) h = '<h2>Verdict</h2><div class="hero">Leave it alone<small>No conversion schedule meaningfully beat doing nothing for this household.</small></div><p class="sub">The tax a conversion costs today is at least as high as the tax it would save later, for them and for their heirs. ' + R.evals + ' lifetime projections were run to check. That is a real answer, and a useful one for a client who read about Roth conversions online.</p>';
+  else h = '<h2>Verdict</h2><div class="hero">+' + fK(d) + '<small>more after-tax wealth by ' + endY + ', in today’s dollars</small></div>' +
+    '<p>' + (w.coreN < w.n ? 'Convert <b>' + fK(P.sumConv) + '</b> in total, ' + fP(w.share) + ' of it in the first ' + w.coreN + ' years (' + w.y0 + ' to ' + w.coreY + ')' : 'Convert <b>' + fK(P.sumConv) + '</b> over ' + w.n + ' year' + (w.n > 1 ? 's' : '') + ', ' + w.y0 + ' to ' + w.y1) + ', peaking at ' + fK(w.top.conv) + ' in ' + w.top.year + '.</p>' +
+    '<p class="sub">Best rule of thumb out of 30 tested: ' + esc(ruleLabel(R.bestRule.rule)) + (R.bestRule.rule.untilT <= B.rmdT ? ', stopping when RMDs begin' : '') + '. ' + (extra > 2000 ? 'Fine-tuning each year’s amount added another ' + fK(extra) + '.' : 'Year-by-year tuning could not improve on it.') + ' ' + R.evals + ' full lifetime tax projections, run on this phone.</p>';
+  h += '<div class="tiles"><div class="tile"><span>Lifetime taxes</span><b>' + fK(P.lifeTax) + '</b><em>' + (R.noop ? 'on the current path' : 'vs ' + fK(B.lifeTax) + ' doing nothing') + '</em></div><div class="tile"><span>Pre-tax left to heirs</span><b>' + fK(P.endPre) + '</b><em>' + (R.noop ? 'on the current path' : 'vs ' + fK(B.endPre) + ' doing nothing') + '</em></div><div class="tile" id="mctile"><span>' + (R.noop ? 'Funded across markets' : 'Wins across markets') + '</span><b>…</b><em>running</em></div></div>';
+  $('verdict').innerHTML = h;
+  $('hhline').textContent = (H.status === 'mfj' ? 'Couple, ' + H.age1 + ' and ' + H.age2 : 'Single, ' + H.age1) + ' · ' + fK(H.pre1 + H.pre2 + H.roth + H.taxable) + ' · spends ' + fK(H.spend);
+}
+function renderMCbits() {
+  const t = $('mctile'); if (t && MC) t.innerHTML = R.noop ? '<span>Funded across markets</span><b>' + fP(MC.succBase) + '</b><em>of 400 paths</em>' : '<span>Wins across markets</span><b>' + fP(MC.wins) + '</b><em>of 400 paths</em>';
+  $('findings').innerHTML = R.finds.map(fHTML).join('') + mcFinding();
+  drawMC(); writeMemo();
+}
+
+/* ---------- memo ---------- */
+function writeMemo() {
+  const P = R.plan, B = R.base, d = P.wealth - B.wealth, w = convWindow(), note = memoMode === 'note';
+  const k = (s) => note ? '[[' + s + ']]' : s;
+  const L = [];
+  const next = P.rows.slice(0, 6);
+  if (B.shortfall > 1) {
+    L.push('# Retirement funding review', '', '**Bottom line:** before any tax planning, the projection shows planned spending is not fully funded through ' + P.rows[P.rows.length - 1].year + ' at a ' + fP(H.ret, 1) + ' real return. The gap is about ' + fK(B.shortfall) + ' in today\'s dollars. We should settle spending, retirement date, and return assumptions first, then revisit Roth conversions.');
+  } else if (R.noop || !w) {
+    L.push('# Roth conversion review', '', '**Bottom line:** we tested 30 conversion strategies against your plan and none of them beat leaving your accounts as they are. Your expected tax rate in retirement is already at or below what a conversion would cost today.', '', 'We will re-test this each year, because a market drop, a tax-law change, or a change in spending can open a window.');
+  } else {
+    L.push(note ? '# ' + k('Roth conversion') + ' plan' : '# Your Roth conversion plan', '');
+    L.push('**Bottom line:** moving ' + fK(P.sumConv) + ' from your pre-tax accounts to Roth' + (w.coreN < w.n ? ', most of it by ' + w.coreY + ',' : ' between ' + w.y0 + ' and ' + w.y1) + ' is projected to leave you about **' + fK(d) + '** better off after taxes by ' + P.rows[P.rows.length - 1].year + ', in today\'s dollars.', '');
+    L.push('## Why this works', '');
+    const rmdRows = B.rows.filter((r) => r.rmd > 0), later = rmdRows.length ? Math.max(...rmdRows.map((r) => r.marg)) : 0;
+    const convRate = P.rows.reduce((a, r) => a + r.conv * r.bracket, 0) / Math.max(1, P.sumConv);
+    if (rmdRows.length) L.push('- ' + k('Required minimum distributions') + ' begin in ' + (START_YEAR + B.rmdT) + '. From then on the IRS forces money out of your IRAs whether you need it or not, up to ' + fK(Math.max(...rmdRows.map((r) => r.rmd))) + ' a year on the current path.');
+    if (later > convRate + .015) L.push('- The conversions are taxed at about ' + fP(convRate) + ' on average. Left alone, those same dollars come out later at rates up to ' + fP(later, 1) + '.');
+    else L.push('- Your own tax rate is similar either way, about ' + fP(convRate) + '. The gain comes from what happens afterward: growth in the Roth is never taxed again, and whoever inherits it owes nothing, where they would owe about ' + fP(H.heirRate) + ' on an inherited IRA.');
+    L.push('- Projected lifetime taxes, including Medicare surcharges and the tax your heirs would owe on the IRA, fall from ' + fK(B.lifeTax) + ' to ' + fK(P.lifeTax) + '.');
+    if (R.surv) L.push('- If the older of you passes away at ' + R.surv.d + ', the survivor files as a single taxpayer with narrower brackets and would reach the ' + fP(R.surv.mxb) + ' bracket on the current path. In that case the plan is worth about ' + fK(R.surv.gain) + '.');
+    L.push('', '## The next six years', '', '| Year | Age' + (H.status === 'mfj' ? 's' : '') + ' | Convert | Est. federal tax | Top bracket |', '|---|---|---|---|---|');
+    for (const r of next) L.push('| ' + r.year + ' | ' + r.lab + ' | ' + fD(r.conv) + ' | ' + fD(r.tax) + ' | ' + fP(r.bracket) + ' |');
+    L.push('', '## What could change this', '');
+    L.push('- **Markets.** ' + (MC ? 'Across 400 simulated markets the plan came out ahead in ' + fP(MC.wins) + ' of them. ' : '') + 'We set each year\'s amount in December using actual balances, so a bad year means a smaller conversion.');
+    L.push('- **Tax law.** The projection assumes 2026 brackets persist. Higher future rates make converting more valuable; lower rates make it less.');
+    L.push('- **' + k('IRMAA') + '.** Medicare premiums rise with income from two years earlier. ' + (P.sumIrmaa > 0 ? 'The plan accepts ' + fK(P.sumIrmaa) + ' of surcharges where the tax savings outweigh them.' : 'The plan stays under the first threshold.'));
+  }
+  if (note) {
+    L.push('', '## Advisor notes', '');
+    L.push('- Household: ' + (H.status === 'mfj' ? 'MFJ, ages ' + H.age1 + '/' + H.age2 : 'single, age ' + H.age1) + '. Pre-tax ' + (H.status === 'mfj' ? fK(H.pre1) + ' client / ' + fK(H.pre2) + ' spouse' : fK(H.pre1)) + ', Roth ' + fK(H.roth) + ', taxable ' + fK(H.taxable) + ' (' + fP(H.basisPct) + ' basis). Spending ' + fK(H.spend) + '.');
+    L.push('- Assumptions: ' + fP(H.ret, 1) + ' real return, ' + fP(H.vol) + ' volatility, ' + fP(H.infl, 1) + ' inflation, ' + fP(H.heirRate) + ' heir rate, plan to ' + H.endAge + '.');
+    L.push('- Best simple rule: ' + ruleLabel(R.bestRule.rule) + '. Optimizer ran ' + R.evals + ' projections.' + (R.orderTested ? ' Converts from the ' + R.order + ' spouse\'s IRA first.' : ''));
+    for (const f of R.finds) L.push('- ' + f.tag + ': ' + f.t + '.');
+    L.push('- Related: ' + k('tax bracket management') + ', ' + k('Social Security tax torpedo') + ', ' + k('widow\'s penalty') + ', ' + k('sequence of returns risk'));
+    L.push('', '#finance/tax-planning #finance/retirement-income #roth-conversion');
+  }
+  $('memo').value = L.join('\n');
+}
+
+/* ---------- run ---------- */
+function run() {
+  const my = ++runId; MC = null;
+  const o = optimize(H);
+  const thresh = Math.max(5000, .001 * (H.pre1 + H.pre2 + H.roth + H.taxable));
+  const noop = o.plan.score - o.base.score < thresh;
+  if (noop) { o.plan = o.base; o.order = 'older'; o.orderTested = false; }
+  R = { noop, plan: o.plan, base: o.base, bestRule: o.bestRule, ruleRun: o.ruleRun, evals: o.evals + 4, surv: null, order: o.order, orderEdge: o.orderEdge || 0, orderTested: !!o.orderTested };
+  R.finds = analyze();
+  renderVerdict(); $('findings').innerHTML = R.finds.map(fHTML).join(''); drawAll(); writeMemo();
+  const paths = mcPaths(H, 400, 7), res = []; let i = 0;
+  (function chunk() {
+    if (my !== runId) return;
+    const end = Math.min(paths.length, i + 40);
+    for (; i < end; i++) res.push({ b: simulate(H, { schedule: [], returns: paths[i], track: true, order: 'older' }), p: simulate(H, { schedule: R.plan.schedule, returns: paths[i], track: true, order: R.order }) });
+    if (i < paths.length) setTimeout(chunk, 0); else { MC = mcSummarize(H, res); renderMCbits(); }
+  })();
+}
+function seg(id, attr, cb) { $(id).addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; $(id).querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', x === b ? 'true' : 'false')); cb(b.dataset[attr]); }); }
+
+$('presets').innerHTML = PRESETS.map((p, i) => '<button data-i="' + i + '" aria-pressed="false">' + esc(p.name) + '</button>').join('');
+$('presets').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) loadPreset(+b.dataset.i); });
+seg('viewseg', 'v', (v) => { view = v; drawBal(); });
+seg('memoseg', 'm', (m) => { memoMode = m; writeMemo(); });
+$('copy').addEventListener('click', () => {
+  const ta = $('memo'), done = (ok) => { $('copymsg').textContent = ok ? 'Copied to the clipboard.' : 'Copy was blocked here. The text is selected: tap Copy in the menu.'; };
+  try { navigator.clipboard.writeText(ta.value).then(() => done(true), () => { ta.focus(); ta.select(); done(false); }); } catch (e) { ta.focus(); ta.select(); done(false); }
+});
+buildForm(); loadPreset(0);
+</script>
+</body>
+</html>

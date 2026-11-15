@@ -1,0 +1,349 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Finance vs. Cash</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,500..800&family=Public+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one narrow column of inputs, then a verdict band, key figures, a net-worth chart and a yearly table. */
+:root {
+  --bg: #F4F6F8;
+  --surface: #FFFFFF;
+  --ink: #15202B;
+  --muted: #5B6875;
+  --line: #DCE2E8;
+  --finance: #2F55C9;
+  --cash: #B86A1E;
+  --good: #1E7F55;
+  --font-display: "Archivo", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0F151B; --surface: #172029; --ink: #E7ECF1; --muted: #93A1AE; --line: #2A3540;
+    --finance: #7F9DF5; --cash: #E3A260; --good: #5CC897; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0F151B; --surface: #172029; --ink: #E7ECF1; --muted: #93A1AE; --line: #2A3540;
+  --finance: #7F9DF5; --cash: #E3A260; --good: #5CC897; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-body); font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 24px 48px;
+}
+.wrap { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+h1 {
+  font-family: var(--font-display); font-stretch: 85%; font-weight: 800;
+  font-size: clamp(28px, 6vw, 40px); line-height: 1.05; margin: 0; text-wrap: balance; letter-spacing: -0.01em;
+}
+.lede { color: var(--muted); margin: 8px 0 0; max-width: 62ch; }
+h2 {
+  font-family: var(--font-display); font-stretch: 90%; font-weight: 700;
+  font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 12px;
+}
+.num { font-variant-numeric: tabular-nums; }
+
+/* Inputs */
+.inputs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 16px; }
+@media (max-width: 520px) { .inputs { grid-template-columns: minmax(0, 1fr); } }
+.field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.field label { font-size: 13px; font-weight: 600; }
+.field .hint { font-size: 12px; color: var(--muted); }
+.box {
+  display: flex; align-items: center; background: var(--surface);
+  border: 1px solid var(--line); border-radius: 8px; padding: 0 12px; min-height: 44px;
+}
+.box:focus-within { border-color: var(--finance); box-shadow: 0 0 0 3px color-mix(in srgb, var(--finance) 22%, transparent); }
+.box span { color: var(--muted); font-variant-numeric: tabular-nums; }
+.box input {
+  flex: 1; min-width: 0; border: 0; background: transparent; color: var(--ink);
+  font: inherit; font-size: 16px; font-variant-numeric: tabular-nums; padding: 10px 6px; outline: none;
+}
+.err { color: #C2412D; font-size: 13px; margin-top: 4px; }
+
+/* Verdict */
+.verdict { border-top: 2px solid var(--ink); padding-top: 16px; display: flex; flex-direction: column; gap: 6px; }
+.verdict .big {
+  font-family: var(--font-display); font-stretch: 80%; font-weight: 800;
+  font-size: clamp(34px, 9vw, 56px); line-height: 1; font-variant-numeric: tabular-nums;
+}
+.verdict p { margin: 0; color: var(--muted); max-width: 62ch; }
+.verdict strong { color: var(--ink); }
+
+/* Figures */
+.figs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+@media (max-width: 520px) { .figs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.fig { background: var(--surface); padding: 12px 14px; min-width: 0; }
+.fig .k { font-size: 12px; color: var(--muted); }
+.fig .v { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* Chart */
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; margin-bottom: 8px; }
+.legend i { display: inline-block; width: 18px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+.chart { width: 100%; height: auto; display: block; }
+.chart text { fill: var(--muted); font-family: var(--font-body); font-size: 11px; font-variant-numeric: tabular-nums; }
+
+/* Table */
+.tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 14px; }
+th, td { padding: 9px 12px; text-align: right; white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+thead th { font-size: 12px; font-weight: 600; color: var(--muted); border-bottom: 1px solid var(--line); }
+tbody tr + tr td { border-top: 1px solid var(--line); }
+tr.payoff td { background: color-mix(in srgb, var(--finance) 8%, transparent); }
+.pos { color: var(--good); }
+.neg { color: var(--cash); }
+
+.method { font-size: 13px; color: var(--muted); max-width: 66ch; }
+.method p { margin: 0 0 8px; }
+.reset { align-self: flex-start; font: inherit; font-size: 13px; color: var(--muted); background: none; border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+.reset:hover { color: var(--ink); border-color: var(--muted); }
+:focus-visible { outline: 2px solid var(--finance); outline-offset: 2px; }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Finance or pay cash?</h1>
+    <p class="lede">Compares your net worth under both choices, with the same dollars leaving your pocket each month. The car is worth the same either way, so it's left out.</p>
+  </header>
+
+  <section>
+    <h2>Your numbers</h2>
+    <div class="inputs">
+      <div class="field">
+        <label for="price">Purchase price</label>
+        <div class="box"><span>$</span><input id="price" type="number" inputmode="decimal" min="0" step="100" value="45000"></div>
+        <div class="hint">Out-the-door, including tax and fees</div>
+      </div>
+      <div class="field">
+        <label for="down">Down payment</label>
+        <div class="box"><span>$</span><input id="down" type="number" inputmode="decimal" min="0" step="100" value="5000"></div>
+        <div class="hint">Spent up front in both cases</div>
+      </div>
+      <div class="field">
+        <label for="term">Loan term</label>
+        <div class="box"><input id="term" type="number" inputmode="numeric" min="1" max="120" step="1" value="72"><span>months</span></div>
+      </div>
+      <div class="field">
+        <label for="apr">Loan APR</label>
+        <div class="box"><input id="apr" type="number" inputmode="decimal" min="0" step="0.01" value="1.99"><span>%</span></div>
+        <div class="hint">The promotional rate</div>
+      </div>
+      <div class="field">
+        <label for="ret">Investment return</label>
+        <div class="box"><input id="ret" type="number" inputmode="decimal" step="0.1" value="7"><span>% / yr</span></div>
+        <div class="hint">Annual return on the alternative</div>
+      </div>
+      <div class="field">
+        <label for="years">Compare after</label>
+        <div class="box"><input id="years" type="number" inputmode="numeric" min="1" max="40" step="1" value="10"><span>years</span></div>
+      </div>
+    </div>
+    <div class="err" id="err" hidden></div>
+  </section>
+
+  <section class="verdict" aria-live="polite">
+    <div class="big" id="vBig">—</div>
+    <p id="vText"></p>
+  </section>
+
+  <section>
+    <div class="figs">
+      <div class="fig"><div class="k">Monthly payment</div><div class="v" id="fPay">—</div></div>
+      <div class="fig"><div class="k">Amount financed</div><div class="v" id="fLoan">—</div></div>
+      <div class="fig"><div class="k">Total interest paid</div><div class="v" id="fInt">—</div></div>
+      <div class="fig"><div class="k">Net worth, financing</div><div class="v" id="fFin">—</div></div>
+      <div class="fig"><div class="k">Net worth, cash</div><div class="v" id="fCash">—</div></div>
+      <div class="fig"><div class="k">Break-even return</div><div class="v" id="fBE">—</div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Net worth over time</h2>
+    <div class="legend">
+      <span><i style="background:var(--finance)"></i>Finance and invest the difference</span>
+      <span><i style="background:var(--cash)"></i>Pay cash and invest the payments</span>
+    </div>
+    <svg class="chart" id="chart" viewBox="0 0 640 280" role="img" aria-label="Net worth of each path by year"></svg>
+  </section>
+
+  <section>
+    <h2>Year by year</h2>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Year</th><th>Finance</th><th>Cash</th><th>Finance ahead by</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="method">
+    <h2>How it's calculated</h2>
+    <p><strong>Finance path:</strong> pay the down payment, invest the rest of the purchase price as a lump sum, and make the loan payments from your monthly cash flow. Net worth is the investment balance minus whatever is still owed on the loan.</p>
+    <p><strong>Cash path:</strong> pay the full price up front, then invest the same monthly payment amount for the length of the loan. After the loan term ends, both paths just compound.</p>
+    <p>Returns compound monthly at the annual rate you enter. No taxes. The break-even return is the loan's effective annual rate: above it, financing wins.</p>
+    <button class="reset" id="reset" type="button">Reset to example numbers</button>
+  </section>
+</div>
+
+<script>
+(function () {
+  const ids = ["price", "down", "term", "apr", "ret", "years"];
+  const defaults = { price: 45000, down: 5000, term: 72, apr: 1.99, ret: 7, years: 10 };
+  const $ = (id) => document.getElementById(id);
+  const usd0 = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const usd2 = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const signed = (v) => (v < 0 ? "−" : "") + usd0.format(Math.abs(v));
+
+  try {
+    const saved = JSON.parse(localStorage.getItem("fvc-inputs") || "null");
+    if (saved) ids.forEach((k) => { if (saved[k] !== undefined && saved[k] !== "") $(k).value = saved[k]; });
+  } catch (e) {}
+
+  function model(p) {
+    const L = Math.max(p.price - p.down, 0);
+    const n = Math.max(1, Math.round(p.term));
+    const i = p.apr / 100 / 12;
+    const g = Math.pow(1 + p.ret / 100, 1 / 12) - 1;
+    const N = Math.max(1, Math.round(p.years * 12));
+    const P = L === 0 ? 0 : (i === 0 ? L / n : L * i / (1 - Math.pow(1 + i, -n)));
+    let finInv = L, loan = L, cashInv = 0;
+    const fin = [0], cash = [0];
+    for (let m = 1; m <= N; m++) {
+      finInv *= (1 + g);
+      cashInv *= (1 + g);
+      if (m <= n) {
+        loan = loan * (1 + i) - P;
+        if (m === n || loan < 0.005) loan = 0;
+        cashInv += P;
+      }
+      fin.push(finInv - loan);
+      cash.push(cashInv);
+    }
+    return { L, n, N, P, interest: P * n - L, fin, cash, breakeven: Math.pow(1 + i, 12) - 1 };
+  }
+
+  function read() {
+    const p = {};
+    ids.forEach((k) => { p[k] = parseFloat($(k).value); });
+    return p;
+  }
+
+  function validate(p) {
+    if (ids.some((k) => !isFinite(p[k]))) return "Fill in every field with a number.";
+    if (p.price <= 0) return "Purchase price needs to be more than $0.";
+    if (p.down < 0) return "Down payment can't be negative.";
+    if (p.down > p.price) return "Down payment is larger than the purchase price. Lower it to compare.";
+    if (p.term < 1 || p.term > 120) return "Loan term should be between 1 and 120 months.";
+    if (p.apr < 0) return "Loan APR can't be negative.";
+    if (p.ret <= -100) return "Investment return must be above −100%.";
+    if (p.years < 1 || p.years > 40) return "Compare after 1 to 40 years.";
+    return "";
+  }
+
+  function niceStep(range, target) {
+    const raw = range / target;
+    const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    const f = raw / mag;
+    return (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag;
+  }
+  const shortUsd = (v) => {
+    const a = Math.abs(v), s = v < 0 ? "−$" : "$";
+    if (a >= 1e6) return s + (a / 1e6).toFixed(a % 1e6 ? 1 : 0) + "M";
+    if (a >= 1e3) return s + Math.round(a / 1e3) + "k";
+    return s + Math.round(a);
+  };
+
+  function drawChart(r) {
+    const svg = $("chart");
+    const W = 640, H = 280, padL = 52, padR = 16, padT = 14, padB = 34;
+    const all = r.fin.concat(r.cash);
+    let lo = Math.min(0, ...all), hi = Math.max(...all);
+    if (hi - lo < 1) hi = lo + 1;
+    const step = niceStep(hi - lo, 5);
+    lo = Math.floor(lo / step) * step; hi = Math.ceil(hi / step) * step;
+    const x = (m) => padL + (m / r.N) * (W - padL - padR);
+    const y = (v) => padT + (1 - (v - lo) / (hi - lo)) * (H - padT - padB);
+    let out = "";
+    for (let v = lo; v <= hi + step / 2; v += step) {
+      const yy = y(v).toFixed(1);
+      out += `<line x1="${padL}" x2="${W - padR}" y1="${yy}" y2="${yy}" style="stroke:var(--line)" stroke-width="1" fill="none"/>`;
+      out += `<text x="${padL - 8}" y="${yy}" text-anchor="end" dominant-baseline="middle">${shortUsd(v)}</text>`;
+    }
+    const years = r.N / 12;
+    const yStep = years <= 12 ? 1 : years <= 24 ? 2 : 5;
+    for (let yr = 0; yr <= years + 1e-9; yr += yStep) {
+      out += `<text x="${x(yr * 12).toFixed(1)}" y="${H - padB + 18}" text-anchor="middle">${yr === 0 ? "Now" : "Yr " + yr}</text>`;
+    }
+    if (r.n < r.N) {
+      const xx = x(r.n).toFixed(1);
+      out += `<line x1="${xx}" x2="${xx}" y1="${padT}" y2="${H - padB}" style="stroke:var(--muted)" stroke-dasharray="3 4" stroke-width="1" fill="none"/>`;
+      out += `<text x="${(+xx + 6).toFixed(1)}" y="${padT + 10}" text-anchor="start">Loan paid off</text>`;
+    }
+    const path = (arr) => arr.map((v, m) => (m ? "L" : "M") + x(m).toFixed(1) + " " + y(v).toFixed(1)).join(" ");
+    out += `<path d="${path(r.cash)}" style="stroke:var(--cash)" stroke-width="2.5" fill="none" stroke-linejoin="round"/>`;
+    out += `<path d="${path(r.fin)}" style="stroke:var(--finance)" stroke-width="2.5" fill="none" stroke-linejoin="round"/>`;
+    const end = r.N;
+    out += `<circle cx="${x(end).toFixed(1)}" cy="${y(r.cash[end]).toFixed(1)}" r="4" style="fill:var(--cash)"/>`;
+    out += `<circle cx="${x(end).toFixed(1)}" cy="${y(r.fin[end]).toFixed(1)}" r="4" style="fill:var(--finance)"/>`;
+    svg.innerHTML = out;
+  }
+
+  function render() {
+    const p = read();
+    const msg = validate(p);
+    $("err").hidden = !msg; $("err").textContent = msg;
+    if (msg) return;
+    try { localStorage.setItem("fvc-inputs", JSON.stringify(Object.fromEntries(ids.map((k) => [k, $(k).value])))); } catch (e) {}
+
+    const r = model(p);
+    const fEnd = r.fin[r.N], cEnd = r.cash[r.N], diff = fEnd - cEnd;
+    const yrs = p.years === 1 ? "1 year" : p.years + " years";
+
+    if (r.L === 0) {
+      $("vBig").textContent = "No loan";
+      $("vText").textContent = "Your down payment covers the full price, so there's nothing to compare.";
+    } else if (Math.abs(diff) < 1) {
+      $("vBig").textContent = "Even";
+      $("vText").textContent = `Your investment return matches the loan's rate, so both paths end at the same net worth after ${yrs}.`;
+    } else {
+      $("vBig").textContent = usd0.format(Math.abs(diff));
+      $("vBig").style.color = diff > 0 ? "var(--finance)" : "var(--cash)";
+      const winner = diff > 0 ? "<strong>Financing</strong>" : "<strong>Paying cash</strong>";
+      const atPayoff = r.n <= r.N ? ` At payoff (month ${r.n}) the gap is ${usd0.format(Math.abs(r.fin[r.n] - r.cash[r.n]))}.` : "";
+      $("vText").innerHTML = `${winner} leaves you this much ahead after ${yrs}.${atPayoff}`;
+    }
+    if (r.L === 0 || Math.abs(diff) < 1) $("vBig").style.color = "";
+
+    $("fPay").textContent = usd2.format(r.P);
+    $("fLoan").textContent = usd0.format(r.L);
+    $("fInt").textContent = usd0.format(r.interest);
+    $("fFin").textContent = usd0.format(fEnd);
+    $("fCash").textContent = usd0.format(cEnd);
+    $("fBE").textContent = (r.breakeven * 100).toFixed(2) + "%";
+
+    drawChart(r);
+
+    let rows = "";
+    const payoffYear = Math.ceil(r.n / 12);
+    for (let yr = 1; yr <= p.years; yr++) {
+      const m = Math.min(yr * 12, r.N);
+      const d = r.fin[m] - r.cash[m];
+      const cls = Math.abs(d) < 1 ? "" : d > 0 ? "pos" : "neg";
+      rows += `<tr${yr === payoffYear ? ' class="payoff"' : ""}><td>${yr}${yr === payoffYear ? " · paid off" : ""}</td><td>${usd0.format(r.fin[m])}</td><td>${usd0.format(r.cash[m])}</td><td class="${cls}">${signed(d)}</td></tr>`;
+    }
+    $("rows").innerHTML = rows;
+  }
+
+  ids.forEach((k) => $(k).addEventListener("input", render));
+  $("reset").addEventListener("click", () => { ids.forEach((k) => { $(k).value = defaults[k]; }); render(); });
+  render();
+})();
+</script>
+
+</body></html>

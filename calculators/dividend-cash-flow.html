@@ -1,0 +1,711 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}body.no-lookup .lk,body.no-lookup #lookupAll{display:none!important}
+</style></head><body>
+<title>Dividend Cash Flow Planner</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a ledger. Settings + holdings on top, then the year-by-year cash flow it produces. */
+:root {
+  --bg: #eef2f0;
+  --surface: #ffffff;
+  --ink: #15201c;
+  --muted: #5a6762;
+  --line: #d5ddd9;
+  --cash: #b26e0e;      /* income paid out to you */
+  --reinvest: #2e6b82;  /* income put back to work */
+  --value: #15201c;
+  --good: #2f7a4a;
+  --warn: #a8461f;
+  --field: #f6f8f7;
+  --font-display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --font-body: "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1412; --surface: #161e1b; --ink: #e4ebe8; --muted: #93a19c; --line: #2a3531;
+    --cash: #e3a446; --reinvest: #6fb0c8; --value: #e4ebe8; --good: #6cc08a; --warn: #f08a5d; --field: #1c2622;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1412; --surface: #161e1b; --ink: #e4ebe8; --muted: #93a19c; --line: #2a3531;
+  --cash: #e3a446; --reinvest: #6fb0c8; --value: #e4ebe8; --good: #6cc08a; --warn: #f08a5d; --field: #1c2622;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.5; }
+.wrap {
+  max-width: 1120px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 56px;
+  display: grid; gap: 22px;
+}
+h1, h2 { font-family: var(--font-display); text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
+h1 { font-size: clamp(26px, 4vw, 36px); font-weight: 700; }
+h2 { font-size: 19px; font-weight: 600; }
+.lede { color: var(--muted); max-width: 64ch; margin: 6px 0 0; }
+.eyebrow { font-size: 11px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px; display: grid; gap: 14px; min-width: 0; }
+.panel-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: baseline; justify-content: space-between; }
+.num, td.n, .tile b { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+
+/* Settings */
+.settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; }
+label.f { display: grid; gap: 4px; font-size: 12px; color: var(--muted); font-weight: 500; }
+input, select {
+  font: inherit; font-size: 14px; color: var(--ink); background: var(--field);
+  border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; width: 100%; min-width: 0;
+}
+input[type="number"] { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--reinvest); outline-offset: 1px; }
+.check { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink); cursor: pointer; }
+.check input { width: 16px; height: 16px; accent-color: var(--reinvest); }
+
+/* Buttons */
+button {
+  font: inherit; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 6px 11px; white-space: nowrap;
+}
+button:hover:not(:disabled) { border-color: var(--muted); }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+button.primary { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+button.ghost { border-color: transparent; background: transparent; color: var(--muted); padding: 6px 8px; }
+.btn-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+/* Holdings table */
+.scroll { overflow-x: auto; margin: 0 -4px; padding: 0 4px; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th { text-align: left; font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); font-weight: 600; padding: 6px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 7px 6px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+th.n, td.n { text-align: right; }
+.holdings td input[type="number"] { width: 78px; text-align: right; }
+.holdings td input.tk { width: 84px; text-transform: uppercase; font-family: var(--font-data); font-weight: 500; }
+.holdings td select { width: 112px; }
+.who { min-width: 170px; max-width: 260px; }
+.who .nm { font-size: 13px; line-height: 1.3; }
+.who .st { font-size: 12px; color: var(--muted); line-height: 1.35; }
+.who .st.err { color: var(--warn); }
+.who .st a { color: inherit; }
+.pill { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
+.pill.live { color: var(--good); border-color: color-mix(in srgb, var(--good) 40%, transparent); }
+.drift { font-size: 12px; color: var(--muted); }
+tfoot td { border-bottom: 0; font-size: 13px; color: var(--muted); }
+.wt-bad { color: var(--warn); font-weight: 600; }
+.note { font-size: 12.5px; color: var(--muted); max-width: 80ch; margin: 0; }
+.note.warn { color: var(--warn); }
+
+/* Summary tiles */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: grid; gap: 2px; align-content: start; }
+.tile b { font-size: 24px; font-weight: 500; letter-spacing: -0.02em; }
+.tile.cash b { color: var(--cash); }
+.tile small { font-size: 12px; color: var(--muted); }
+
+/* Chart */
+.chart-box { position: relative; height: 340px; }
+.legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 13px; color: var(--muted); }
+.legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; background: var(--c); }
+.legend span.line::before { height: 2px; vertical-align: 3px; }
+
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; background: transparent; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+
+.year-table td.n, .year-table th.n { padding-left: 14px; }
+.year-table tr.mark td { background: color-mix(in srgb, var(--cash) 7%, transparent); }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+@media (max-width: 520px) { .tile b { font-size: 21px; } .chart-box { height: 280px; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Liquid income sleeve</div>
+    <h1>Dividend Cash Flow Planner</h1>
+    <p class="lede">Project the income a portfolio of tickers throws off each year. Contributions and reinvested dividends buy whatever is underweight, so the mix drifts back toward your targets without selling.</p>
+  </header>
+
+  <section class="panel" aria-labelledby="s-portfolio">
+    <div class="panel-head"><h2 id="s-portfolio">Portfolio</h2></div>
+    <div class="settings">
+      <label class="f">Starting balance ($)<input id="start" type="number" min="0" step="1000"></label>
+      <label class="f">Recurring contribution ($)<input id="contrib" type="number" min="0" step="100"></label>
+      <label class="f">Contribution frequency
+        <select id="freq"><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option><option value="annual">Annual</option></select>
+      </label>
+      <label class="f">Contribution increase (%/yr)<input id="cgrowth" type="number" step="0.5"></label>
+      <label class="f">Years to project<input id="years" type="number" min="1" max="50" step="1"></label>
+      <label class="f">Inflation (%/yr)<input id="infl" type="number" step="0.1"></label>
+    </div>
+  </section>
+
+  <section class="panel" aria-labelledby="s-holdings">
+    <div class="panel-head">
+      <h2 id="s-holdings">Holdings</h2>
+      <div class="btn-row">
+        <button id="lookupAll" type="button">Look up all</button>
+        <button id="addRow" type="button" class="primary">Add ticker</button>
+      </div>
+    </div>
+    <p class="note" id="lookupNote">Look up pulls the current yield, payout schedule and dividend history from stockanalysis.com through the Claude app's browser. Dividend growth is the compound rate of the trailing-12-month dividend over the history shown (up to 5 years). Price growth starts equal to dividend growth, which assumes the yield stays constant. Every field stays editable.</p>
+    <div class="scroll">
+      <table class="holdings">
+        <thead>
+          <tr>
+            <th>Ticker</th><th>Name / source</th><th class="n">Target %</th><th class="n">Yield %</th>
+            <th class="n">Div growth %</th><th class="n">Price growth %</th><th>Pays</th><th>Reinvest</th>
+            <th class="n">End weight</th><th><span class="sr">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+        <tfoot><tr><td></td><td>Target total</td><td class="n num" id="wTotal"></td><td colspan="7" id="wMsg"></td></tr></tfoot>
+      </table>
+    </div>
+  </section>
+
+  <section class="tiles" aria-label="Summary">
+    <div class="tile cash"><span class="eyebrow">Cash income, year 1</span><b id="t1">–</b><small id="t1s"></small></div>
+    <div class="tile cash"><span class="eyebrow" id="tNl">Cash income, final year</span><b id="tN">–</b><small id="tNs"></small></div>
+    <div class="tile"><span class="eyebrow">Ending balance</span><b id="tV">–</b><small id="tVs"></small></div>
+    <div class="tile"><span class="eyebrow">Total contributed</span><b id="tC">–</b><small id="tCs"></small></div>
+  </section>
+
+  <section class="panel" aria-labelledby="s-chart">
+    <div class="panel-head">
+      <h2 id="s-chart">Cash flow by year</h2>
+      <div class="seg" role="group" aria-label="Dollar basis">
+        <button type="button" id="nominalBtn" aria-pressed="true">Nominal $</button>
+        <button type="button" id="realBtn" aria-pressed="false">Today's $</button>
+      </div>
+    </div>
+    <div class="legend">
+      <span style="--c: var(--cash)">Paid to you</span>
+      <span style="--c: var(--reinvest)">Reinvested</span>
+      <span class="line" style="--c: var(--muted)">Portfolio balance (right axis)</span>
+    </div>
+    <div class="chart-box"><canvas id="chart" aria-label="Annual income and portfolio balance"></canvas></div>
+  </section>
+
+  <section class="panel" aria-labelledby="s-years">
+    <div class="panel-head"><h2 id="s-years">Year by year</h2><span class="note" id="basisNote"></span></div>
+    <div class="scroll">
+      <table class="year-table">
+        <thead><tr><th>Year</th><th class="n">Contributed</th><th class="n">Paid to you</th><th class="n">Per month</th><th class="n">Reinvested</th><th class="n">Income yield</th><th class="n">Ending balance</th></tr></thead>
+        <tbody id="yrows"></tbody>
+      </table>
+    </div>
+    <p class="note">No taxes or fees. Prices and dividends grow smoothly at the rates above. Real markets don't; treat this as the shape of the cash flow, not a forecast. Income yield is the year's total dividends divided by the starting balance for that year.</p>
+  </section>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+// ---- Projection engine + page parser (pure functions) ----
+const PAYS_PER_YEAR = { Monthly: 12, Quarterly: 4, "Semi-Annual": 2, Annual: 1 };
+
+function waterFill(values, weights, pool) {
+  // Spend `pool` on underweight holdings only (no selling) so they move toward target weights.
+  const n = values.length;
+  const alloc = new Array(n).fill(0);
+  if (pool <= 0) return alloc;
+  const total = values.reduce((a, b) => a + b, 0) + pool;
+  const f = (k) => {
+    let s = 0;
+    for (let i = 0; i < n; i++) s += Math.max(0, weights[i] * k - values[i]);
+    return s;
+  };
+  let lo = 0, hi = total;
+  for (let it = 0; it < 80; it++) {
+    const mid = (lo + hi) / 2;
+    if (f(mid) < pool) lo = mid; else hi = mid;
+  }
+  let sum = 0;
+  for (let i = 0; i < n; i++) { alloc[i] = Math.max(0, weights[i] * hi - values[i]); sum += alloc[i]; }
+  if (sum > 0) for (let i = 0; i < n; i++) alloc[i] *= pool / sum;
+  return alloc;
+}
+
+function project(cfg) {
+  const H = cfg.holdings;
+  const n = H.length;
+  const wSum = H.reduce((a, h) => a + Math.max(0, h.weight || 0), 0);
+  const w = H.map((h) => (wSum > 0 ? Math.max(0, h.weight || 0) / wSum : 1 / Math.max(1, n)));
+  const shares = w.map((wi) => (cfg.start || 0) * wi); // notional price starts at 1.00
+  const years = Math.max(1, Math.round(cfg.years || 1));
+  const stepEvery = { monthly: 1, quarterly: 3, annual: 12 }[cfg.freq] || 1;
+  const rows = [];
+  let yr = null;
+  let prevValue = cfg.start || 0;
+
+  for (let m = 1; m <= years * 12; m++) {
+    const yIdx = Math.floor((m - 1) / 12);
+    if ((m - 1) % 12 === 0) {
+      yr = { year: yIdx + 1, contrib: 0, cash: 0, reinvested: 0, startValue: prevValue, byHolding: H.map(() => ({ cash: 0, reinvested: 0 })) };
+    }
+    const price = H.map((h) => Math.pow(1 + (h.priceGrowth || 0) / 100, m / 12));
+    const dps = H.map((h) => ((h.yield || 0) / 100) * Math.pow(1 + (h.divGrowth || 0) / 100, yIdx));
+    let pool = 0;
+
+    for (let i = 0; i < n; i++) {
+      const k = PAYS_PER_YEAR[H[i].pays] || 12;
+      if (m % (12 / k) !== 0) continue;
+      const amt = shares[i] * dps[i] / k;
+      if (H[i].reinvest) { pool += amt; yr.reinvested += amt; yr.byHolding[i].reinvested += amt; }
+      else { yr.cash += amt; yr.byHolding[i].cash += amt; }
+    }
+    if ((m - 1) % stepEvery === 0 && cfg.contrib > 0) {
+      const c = cfg.contrib * Math.pow(1 + (cfg.contribGrowth || 0) / 100, yIdx);
+      pool += c; yr.contrib += c;
+    }
+    if (pool > 0) {
+      const values = shares.map((s, i) => s * price[i]);
+      const alloc = waterFill(values, w, pool);
+      for (let i = 0; i < n; i++) shares[i] += alloc[i] / price[i];
+    }
+    if (m % 12 === 0) {
+      const values = shares.map((s, i) => s * price[i]);
+      const endValue = values.reduce((a, b) => a + b, 0);
+      yr.endValue = endValue;
+      yr.weights = values.map((v) => (endValue > 0 ? v / endValue : 0));
+      yr.incomeYield = yr.startValue > 0 ? (yr.cash + yr.reinvested) / yr.startValue : 0;
+      prevValue = endValue;
+      rows.push(yr);
+    }
+  }
+  return { rows, weights: w };
+}
+
+const MONTHS = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
+function parseDate(s) {
+  const m = /^([A-Z][a-z]{2}) (\d{1,2}), (\d{4})$/.exec(s.trim());
+  if (!m || !(m[1] in MONTHS)) return null;
+  return Date.UTC(+m[3], MONTHS[m[1]], +m[2]);
+}
+function afterLabel(text, label) {
+  const re = new RegExp("(?:^|\\n)" + label + "\\s*\\n\\s*([^\\n]+)");
+  const m = re.exec(text);
+  return m ? m[1].trim() : null;
+}
+function num(s) {
+  if (s == null) return null;
+  const v = parseFloat(String(s).replace(/[$,%\s]/g, ""));
+  return Number.isFinite(v) ? v : null;
+}
+
+function parseDividendPage(text) {
+  const out = { ok: false };
+  if (!text || /Page Not Found/i.test(text)) return out;
+  const body = text.split(/\n---\n/).slice(1).join("\n---\n") || text;
+  const lines = body.split("\n").map((l) => l.trim()).filter(Boolean);
+  const nameLine = lines.find((l) => /\([A-Z0-9.\-]{1,10}\)$/.test(l));
+  out.name = nameLine ? nameLine.replace(/\s*\([A-Z0-9.\-]{1,10}\)$/, "") : null;
+  const priceLine = lines.find((l) => /^\d[\d,]*\.\d+\s+[+-]/.test(l));
+  out.price = priceLine ? num(priceLine.split(/\s+/)[0]) : null;
+  const asOf = /(?:At close:\s*)?([A-Z][a-z]{2} \d{1,2}, \d{4}),\s*\d{1,2}:\d{2}\s*[AP]M/.exec(body);
+  out.asOf = asOf ? asOf[1] : null;
+  out.yield = num(afterLabel(body, "Dividend Yield"));
+  out.annualDiv = num(afterLabel(body, "Annual Dividend"));
+  const freq = afterLabel(body, "Payout Frequency");
+  out.pays = freq && /month/i.test(freq) ? "Monthly" : freq && /quarter/i.test(freq) ? "Quarterly"
+    : freq && /semi/i.test(freq) ? "Semi-Annual" : freq && /annual/i.test(freq) ? "Annual" : null;
+
+  const hist = [];
+  const re = /(?:^|\n)\s*([A-Z][a-z]{2} \d{1,2}, \d{4})\t\$([\d.]+)/g;
+  let mm;
+  while ((mm = re.exec(body))) {
+    const d = parseDate(mm[1]);
+    const a = parseFloat(mm[2]);
+    if (d != null && Number.isFinite(a)) hist.push({ d, a });
+  }
+  hist.sort((x, y) => y.d - x.d);
+  out.historyCount = hist.length;
+
+  // Dividend growth: trailing-12-month total now vs. N years ago (N up to 5, limited by history shown).
+  // Uses the last k regular payments (k = payments per year) so ex-date jitter doesn't drop a payment.
+  if (hist.length >= 2) {
+    const DAY = 86400000, YEAR = 365.25 * DAY;
+    const latest = hist[0].d;
+    const k = PAYS_PER_YEAR[out.pays] || Math.max(1, hist.filter((h) => h.d > latest - YEAR + 10 * DAY).length);
+    const sum = (from) => hist.slice(from, from + k).reduce((s, h) => s + h.a, 0);
+    for (let N = 5; N >= 1; N--) {
+      const idx = hist.findIndex((h) => h.d <= latest - N * YEAR + 20 * DAY);
+      if (idx < 0 || idx + k > hist.length) continue;
+      const now = sum(0), then = sum(idx);
+      if (now > 0 && then > 0) { out.divCagr = (Math.pow(now / then, 1 / N) - 1) * 100; out.cagrYears = N; }
+      break;
+    }
+  }
+  out.isRateDriven = /treasury|t-bill|bond|money market|floating/i.test(out.name || "");
+  out.ok = out.yield != null || out.annualDiv != null;
+  if (out.yield == null && out.annualDiv && out.price) out.yield = (out.annualDiv / out.price) * 100;
+  return out;
+}
+
+if (typeof module !== "undefined") module.exports = { project, waterFill, parseDividendPage };
+
+
+// ---------------- State ----------------
+const STORE_KEY = "dcfp.v1";
+const EXAMPLE = {
+  start: 250000, contrib: 2000, freq: "monthly", cgrowth: 0, years: 15, infl: 2.5, real: false,
+  holdings: [
+    { ticker: "O", name: "Realty Income Corporation", weight: 30, yield: 5.73, divGrowth: 2.3, priceGrowth: 2.3, pays: "Monthly", reinvest: false, src: "example", asOf: "Oct 23, 2026" },
+    { ticker: "NNN", name: "NNN REIT, Inc.", weight: 25, yield: 5.94, divGrowth: 3.1, priceGrowth: 3.1, pays: "Quarterly", reinvest: false, src: "example", asOf: "Oct 23, 2026" },
+    { ticker: "ADC", name: "Agree Realty Corporation", weight: 20, yield: 4.88, divGrowth: 3.9, priceGrowth: 3.9, pays: "Monthly", reinvest: false, src: "example", asOf: "Oct 23, 2026" },
+    { ticker: "SGOV", name: "iShares 0-3 Month Treasury Bond ETF", weight: 25, yield: 3.64, divGrowth: 0, priceGrowth: 0, pays: "Monthly", reinvest: true, src: "example", asOf: "Oct 23, 2026" }
+  ]
+};
+let state = load();
+let uid = 1;
+state.holdings.forEach((h) => (h.id = uid++));
+
+function load() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (raw) { const s = JSON.parse(raw); if (s && Array.isArray(s.holdings)) return s; }
+  } catch (e) {}
+  return JSON.parse(JSON.stringify(EXAMPLE));
+}
+let saveTimer;
+function save() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    try {
+      const copy = { ...state, holdings: state.holdings.map(({ id, status, statusErr, busy, ...h }) => h) };
+      localStorage.setItem(STORE_KEY, JSON.stringify(copy));
+    } catch (e) {}
+  }, 300);
+}
+
+// ---------------- Formatting ----------------
+const $ = (id) => document.getElementById(id);
+const usd = (v) => (v < 0 ? "-$" : "$") + Math.round(Math.abs(v)).toLocaleString("en-US");
+const usdShort = (v) => {
+  const a = Math.abs(v);
+  if (a >= 1e6) return "$" + (v / 1e6).toFixed(a >= 1e7 ? 1 : 2) + "M";
+  if (a >= 1e3) return "$" + (v / 1e3).toFixed(0) + "k";
+  return "$" + Math.round(v);
+};
+const pct = (v, d = 2) => (v * 100).toFixed(d) + "%";
+const numOr = (v, d = 0) => (Number.isFinite(+v) && v !== "" ? +v : d);
+
+// ---------------- Settings ----------------
+const fields = { start: "start", contrib: "contrib", freq: "freq", cgrowth: "cgrowth", years: "years", infl: "infl" };
+for (const [key, id] of Object.entries(fields)) {
+  const el = $(id);
+  el.value = state[key];
+  el.addEventListener("input", () => {
+    state[key] = el.tagName === "SELECT" ? el.value : el.value === "" ? "" : +el.value;
+    save(); recompute();
+  });
+}
+function setBasis(real) {
+  state.real = real;
+  $("realBtn").setAttribute("aria-pressed", String(real));
+  $("nominalBtn").setAttribute("aria-pressed", String(!real));
+  save(); recompute();
+}
+$("realBtn").onclick = () => setBasis(true);
+$("nominalBtn").onclick = () => setBasis(false);
+
+// ---------------- Holdings table ----------------
+const tbody = $("rows");
+function rowHTML(h) {
+  return `
+    <td><input class="tk" id="tk-${h.id}" aria-label="Ticker" maxlength="10" spellcheck="false" autocomplete="off"></td>
+    <td class="who"><div class="nm" id="nm-${h.id}"></div><div class="st" id="st-${h.id}"></div></td>
+    <td class="n"><input type="number" step="1" min="0" id="w-${h.id}" aria-label="Target weight percent"></td>
+    <td class="n"><input type="number" step="0.01" id="y-${h.id}" aria-label="Dividend yield percent"></td>
+    <td class="n"><input type="number" step="0.1" id="g-${h.id}" aria-label="Dividend growth percent per year"></td>
+    <td class="n"><input type="number" step="0.1" id="p-${h.id}" aria-label="Price growth percent per year"></td>
+    <td><select id="pay-${h.id}" aria-label="Payout frequency"><option>Monthly</option><option>Quarterly</option><option>Semi-Annual</option><option>Annual</option></select></td>
+    <td><label class="check"><input type="checkbox" id="r-${h.id}"><span class="sr">Reinvest dividends</span></label></td>
+    <td class="n drift num" id="ew-${h.id}">–</td>
+    <td><div class="btn-row" style="flex-wrap:nowrap;gap:2px">
+      <button type="button" class="ghost lk" id="lk-${h.id}">Look up</button>
+      <button type="button" class="ghost" id="rm-${h.id}" aria-label="Remove">Remove</button>
+    </div></td>`;
+}
+function renderRows() {
+  tbody.innerHTML = "";
+  for (const h of state.holdings) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = rowHTML(h);
+    tbody.appendChild(tr);
+    bindRow(h);
+    paintRow(h);
+  }
+  updateLookupButtons();
+}
+function bindRow(h) {
+  const bind = (id, key, isNum) => {
+    const el = $(id);
+    el.addEventListener("input", () => { h[key] = isNum ? (el.value === "" ? "" : +el.value) : el.value; h.src = h.src === "live" || h.src === "example" ? h.src + "-edited" : h.src; paintStatus(h); save(); recompute(); });
+  };
+  const tk = $("tk-" + h.id);
+  tk.addEventListener("input", () => { h.ticker = tk.value.toUpperCase().trim(); h.name = ""; h.src = "manual"; paintStatus(h); save(); });
+  tk.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); lookup(h); } });
+  bind("w-" + h.id, "weight", true);
+  bind("y-" + h.id, "yield", true);
+  bind("g-" + h.id, "divGrowth", true);
+  bind("p-" + h.id, "priceGrowth", true);
+  $("pay-" + h.id).addEventListener("change", (e) => { h.pays = e.target.value; save(); recompute(); });
+  $("r-" + h.id).addEventListener("change", (e) => { h.reinvest = e.target.checked; save(); recompute(); });
+  $("lk-" + h.id).addEventListener("click", () => lookup(h));
+  $("rm-" + h.id).addEventListener("click", () => {
+    state.holdings = state.holdings.filter((x) => x !== h);
+    save(); renderRows(); recompute();
+  });
+}
+function paintRow(h) {
+  $("tk-" + h.id).value = h.ticker || "";
+  $("w-" + h.id).value = h.weight;
+  $("y-" + h.id).value = h.yield;
+  $("g-" + h.id).value = h.divGrowth;
+  $("p-" + h.id).value = h.priceGrowth;
+  $("pay-" + h.id).value = h.pays || "Monthly";
+  $("r-" + h.id).checked = !!h.reinvest;
+  paintStatus(h);
+}
+function paintStatus(h) {
+  const nm = $("nm-" + h.id), st = $("st-" + h.id);
+  if (!nm) return;
+  nm.textContent = h.name || (h.ticker ? h.ticker : "New holding");
+  st.className = "st" + (h.statusErr ? " err" : "");
+  st.textContent = "";
+  if (h.busy) { st.textContent = h.status || "Looking up…"; return; }
+  if (h.statusErr) { st.textContent = h.status; return; }
+  const src = h.src || "manual";
+  const pill = document.createElement("span");
+  pill.className = "pill" + (src === "live" ? " live" : "");
+  pill.textContent = src === "live" ? "Looked up" : src.startsWith("example") ? "Example" : src.endsWith("-edited") ? "Edited" : "Manual";
+  st.appendChild(pill);
+  const bits = [];
+  if (h.asOf && src !== "manual") bits.push(" as of " + h.asOf);
+  if (h.cagrYears && src.startsWith("live")) bits.push(" · growth over " + h.cagrYears + " yr");
+  if (h.rateNote && src.startsWith("live")) bits.push(" · rate-driven, growth set to 0");
+  st.appendChild(document.createTextNode(bits.join("")));
+  if (h.ticker && src.startsWith("live")) {
+    st.appendChild(document.createTextNode(" · "));
+    const a = document.createElement("a");
+    a.href = "https://stockanalysis.com/stocks/" + encodeURIComponent(h.ticker.toLowerCase()) + "/dividend/";
+    a.target = "_blank"; a.rel = "noopener"; a.textContent = "source";
+    st.appendChild(a);
+  }
+}
+$("addRow").onclick = () => {
+  const h = { id: uid++, ticker: "", name: "", weight: 0, yield: 0, divGrowth: 0, priceGrowth: 0, pays: "Monthly", reinvest: false, src: "manual" };
+  state.holdings.push(h);
+  save(); renderRows(); recompute();
+  $("tk-" + h.id).focus();
+};
+
+// ---------------- Projection + output ----------------
+let chart = null;
+function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+function recompute() {
+  const H = state.holdings;
+  const wTot = H.reduce((a, h) => a + numOr(h.weight), 0);
+  $("wTotal").textContent = wTot.toFixed(0) + "%";
+  $("wTotal").className = "n num" + (Math.abs(wTot - 100) > 0.01 ? " wt-bad" : "");
+  $("wMsg").textContent = H.length && Math.abs(wTot - 100) > 0.01 ? (wTot > 0 ? "Targets don't add to 100%. They're scaled proportionally for the projection." : "Set target weights to run the projection.") : "";
+  $("wMsg").className = "note" + (Math.abs(wTot - 100) > 0.01 ? " warn" : "");
+
+  const years = Math.min(50, Math.max(1, Math.round(numOr(state.years, 15))));
+  const cfg = {
+    start: numOr(state.start), contrib: numOr(state.contrib), freq: state.freq, contribGrowth: numOr(state.cgrowth),
+    years, holdings: H.map((h) => ({ weight: numOr(h.weight), yield: numOr(h.yield), divGrowth: numOr(h.divGrowth), priceGrowth: numOr(h.priceGrowth), pays: h.pays, reinvest: !!h.reinvest }))
+  };
+  const infl = numOr(state.infl) / 100;
+  const { rows } = H.length && wTot > 0 ? project(cfg) : { rows: [] };
+  const defl = (y) => (state.real ? Math.pow(1 + infl, y) : 1);
+  const R = rows.map((r) => ({ ...r, d: defl(r.year) }));
+
+  // End weights
+  const last = R[R.length - 1];
+  H.forEach((h, i) => { const el = $("ew-" + h.id); if (el) el.textContent = last ? pct(last.weights[i], 1) : "–"; });
+
+  // Tiles
+  const basis = state.real ? "in today's dollars" : "nominal";
+  if (R.length) {
+    const first = R[0];
+    $("t1").textContent = usd(first.cash / first.d);
+    $("t1s").textContent = usd(first.cash / first.d / 12) + "/mo · " + usd(first.reinvested / first.d) + " reinvested";
+    $("tNl").textContent = "Cash income, year " + last.year;
+    $("tN").textContent = usd(last.cash / last.d);
+    $("tNs").textContent = usd(last.cash / last.d / 12) + "/mo · " + usd(last.reinvested / last.d) + " reinvested";
+    $("tV").textContent = usd(last.endValue / last.d);
+    $("tVs").textContent = "after " + last.year + " years, " + basis;
+    const totC = R.reduce((a, r) => a + r.contrib, 0);
+    $("tC").textContent = usd(numOr(state.start) + totC);
+    $("tCs").textContent = usd(numOr(state.start)) + " start + " + usd(totC) + " added";
+  } else {
+    ["t1", "tN", "tV", "tC"].forEach((id) => ($(id).textContent = "–"));
+    ["t1s", "tNs", "tVs", "tCs"].forEach((id) => ($(id).textContent = ""));
+  }
+  $("basisNote").textContent = state.real ? "Today's dollars at " + (infl * 100).toFixed(1) + "% inflation" : "Nominal dollars";
+
+  // Year table
+  const yb = $("yrows");
+  yb.innerHTML = "";
+  for (const r of R) {
+    const tr = document.createElement("tr");
+    if (r.year === 1 || r.year % 5 === 0 || r === last) tr.className = "mark";
+    const cells = [r.year, usd(r.contrib / r.d), usd(r.cash / r.d), usd(r.cash / r.d / 12), usd(r.reinvested / r.d), pct(r.incomeYield), usd(r.endValue / r.d)];
+    cells.forEach((c, i) => { const td = document.createElement("td"); td.textContent = c; if (i > 0) td.className = "n"; else td.className = "num"; tr.appendChild(td); });
+    yb.appendChild(tr);
+  }
+  drawChart(R);
+}
+
+function drawChart(R) {
+  if (typeof Chart === "undefined") return;
+  const ink = css("--ink"), muted = css("--muted"), line = css("--line");
+  const data = {
+    labels: R.map((r) => "Yr " + r.year),
+    datasets: [
+      { type: "bar", label: "Paid to you", data: R.map((r) => r.cash / r.d), backgroundColor: css("--cash"), stack: "inc", yAxisID: "y", borderRadius: 2, order: 2 },
+      { type: "bar", label: "Reinvested", data: R.map((r) => r.reinvested / r.d), backgroundColor: css("--reinvest"), stack: "inc", yAxisID: "y", borderRadius: 2, order: 2 },
+      { type: "line", label: "Portfolio balance", data: R.map((r) => r.endValue / r.d), borderColor: muted, backgroundColor: muted, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, tension: 0.25, yAxisID: "y2", order: 1 }
+    ]
+  };
+  const font = { family: getComputedStyle(document.body).getPropertyValue("--font-data") || "monospace", size: 11 };
+  const options = {
+    responsive: true, maintainAspectRatio: false, animation: false,
+    interaction: { mode: "index", intersect: false },
+    plugins: {
+      legend: { display: false },
+      tooltip: { callbacks: { label: (c) => " " + c.dataset.label + ": " + usd(c.parsed.y) } }
+    },
+    scales: {
+      x: { stacked: true, grid: { display: false }, ticks: { color: muted, font, maxRotation: 0, autoSkipPadding: 10 }, border: { color: line } },
+      y: { stacked: true, beginAtZero: true, title: { display: true, text: "Income per year", color: muted, font }, grid: { color: line }, ticks: { color: muted, font, callback: (v) => usdShort(v) }, border: { display: false } },
+      y2: { position: "right", beginAtZero: true, title: { display: true, text: "Balance", color: muted, font }, grid: { display: false }, ticks: { color: muted, font, callback: (v) => usdShort(v) }, border: { display: false } }
+    }
+  };
+  if (chart) { chart.data = data; chart.options = options; chart.update(); }
+  else chart = new Chart($("chart"), { data, options });
+}
+// Redraw chart colors when the theme changes
+try { matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => recompute()); } catch (e) {}
+new MutationObserver(() => recompute()).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+// ---------------- Lookup via the Claude app's browser ----------------
+const BROWSER = "host:claude_browser";
+let mcp = null;          // resolved capability or null
+let mcpChecked = false;
+let tabId = null;
+let busyCount = 0;
+
+(async () => {
+  try { mcp = window.claude && window.claude.use ? await window.claude.use("mcp") : null; } catch (e) { mcp = null; }
+  mcpChecked = true;
+  updateLookupButtons();
+})();
+
+function updateLookupButtons() {
+  const usable = !!mcp;
+  document.querySelectorAll("button.lk").forEach((b) => (b.disabled = !usable || busyCount > 0));
+  $("lookupAll").disabled = !usable || busyCount > 0;
+  if (mcpChecked && !usable) {
+    document.body.classList.add("no-lookup");
+    $("lookupNote").textContent = "Enter each holding's current yield and dividend growth rate by hand. Price growth starts equal to dividend growth, which assumes the yield stays constant.";
+  }
+}
+function textOf(res) {
+  if (!res) return "";
+  if (Array.isArray(res.content)) return res.content.filter((b) => b && b.type === "text").map((b) => b.text).join("\n");
+  return typeof res.payload === "string" ? res.payload : "";
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function openPage(url) {
+  if (tabId) {
+    try { await mcp.callTool(BROWSER, "navigate", { url, tabId }, { cache: false }); return; }
+    catch (e) { if (e && e.code !== "tool_error") throw e; tabId = null; }
+  }
+  const res = await mcp.callTool(BROWSER, "preview_start", { url }, { cache: false });
+  const m = /tabId[\s"':=]*\(?\s*"?([\w-]+)/i.exec(textOf(res));
+  tabId = m ? m[1] : null;
+}
+async function readPage() {
+  const input = { max_chars: 40000 };
+  if (tabId) input.tabId = tabId;
+  const res = await mcp.callTool(BROWSER, "get_page_text", input, { cache: false });
+  return textOf(res);
+}
+function copyForError(e, ticker) {
+  switch (e && e.code) {
+    case "server_not_connected": return "The Claude app's browser isn't reachable. Open this page in the Claude desktop app and try again.";
+    case "not_in_manifest": case "approval_required": case "not_granted": return "Browser access wasn't allowed for this page. Choose Allow when the app asks, then try again.";
+    case "cancelled": return "Lookup cancelled.";
+    case "tool_error": return "The browser couldn't load the page" + (e.message ? ": " + String(e.message).slice(0, 120) : ".");
+    case "server_unavailable": case "upstream_error": return "The browser didn't respond. Try again in a moment.";
+    default: return "Couldn't look up " + ticker + ". Enter the values by hand.";
+  }
+}
+
+async function lookup(h) {
+  if (!mcp || !h.ticker) {
+    if (!h.ticker) { h.status = "Type a ticker first."; h.statusErr = true; paintStatus(h); }
+    return;
+  }
+  const t = h.ticker.toLowerCase().replace(/[^a-z0-9.\-]/g, "");
+  h.busy = true; h.statusErr = false; h.status = "Looking up " + h.ticker + "…"; paintStatus(h);
+  busyCount++; updateLookupButtons();
+  try {
+    await openPage("https://stockanalysis.com/stocks/" + t + "/dividend/");
+    let parsed = { ok: false }, text = "";
+    for (let attempt = 0; attempt < 4; attempt++) {
+      if (attempt) await sleep(1500);
+      text = await readPage();
+      if (/Page Not Found/i.test(text)) break;
+      parsed = parseDividendPage(text);
+      if (parsed.ok && parsed.historyCount > 0) break;
+    }
+    h.busy = false;
+    if (!parsed.ok) {
+      h.status = /Page Not Found/i.test(text) ? "No page found for " + h.ticker + ". Check the ticker." : "No dividend data found for " + h.ticker + ". Enter the values by hand.";
+      h.statusErr = true;
+    } else {
+      h.name = parsed.name || h.ticker;
+      if (parsed.yield != null) h.yield = +parsed.yield.toFixed(2);
+      if (parsed.pays) h.pays = parsed.pays;
+      h.rateNote = parsed.isRateDriven;
+      if (parsed.isRateDriven) { h.divGrowth = 0; h.priceGrowth = 0; }
+      else if (parsed.divCagr != null) {
+        const g = Math.max(-10, Math.min(15, parsed.divCagr));
+        h.divGrowth = +g.toFixed(1);
+        h.priceGrowth = +Math.max(-5, Math.min(10, g)).toFixed(1);
+      }
+      h.cagrYears = parsed.isRateDriven ? null : parsed.cagrYears || null;
+      h.asOf = parsed.asOf || new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+      h.src = "live";
+      h.statusErr = false; h.status = "";
+      paintRow(h); save(); recompute();
+    }
+  } catch (e) {
+    h.busy = false; h.statusErr = true; h.status = copyForError(e, h.ticker);
+  } finally {
+    h.busy = false;
+    busyCount--; updateLookupButtons(); paintStatus(h);
+  }
+}
+$("lookupAll").onclick = async () => {
+  for (const h of state.holdings.slice()) {
+    if (!h.ticker) continue;
+    await lookup(h);
+    if (h.statusErr && /allowed|reachable|cancelled/.test(h.status || "")) break;
+  }
+};
+
+renderRows();
+setBasis(!!state.real);
+</script>
+
+</body></html>
