@@ -43,7 +43,7 @@ details.assume .body{display:flex;flex-direction:column;gap:12px;margin-top:12px
 <div class="wrap">
   <header>
     <h1>Risk Parity Backtest</h1>
-    <p>Six diversified funds sized so each contributes equal risk, then levered to match the volatility of a stock/bond mix. Backtested with real margin costs.</p>
+    <p>Seven diversified funds sized so each contributes equal risk (with a cap on interest-rate risk), then levered to match the volatility of a stock/bond mix. Bond funds are only levered when their yield beats the margin rate. Backtested with real margin costs.</p>
   </header>
 
   <div class="layout">
@@ -82,6 +82,7 @@ details.assume .body{display:flex;flex-direction:column;gap:12px;margin-top:12px
               <option value="4" selected>4× (portfolio margin)</option>
               <option value="5">5×</option>
             </select></div></div>
+            <label class="chk"><input type="checkbox" id="carry" checked> Carry rule: don't lever bond funds yielding less than the margin rate</label>
             <label class="chk"><input type="checkbox" id="log" checked> Log scale</label>
           </div>
         </details>
@@ -116,9 +117,11 @@ details.assume .body{display:flex;flex-direction:column;gap:12px;margin-top:12px
 
           <section class="panel how">
             <h2>How it works</h2>
-            <p>Each month, equal-risk-contribution weights are computed from the trailing 36-month covariance of the six funds (an expanding window for the first three years), then rebalanced monthly. Each month's return is never part of its own window, so there is no look-ahead.</p>
+            <p>Each month, risk-parity weights are computed from the trailing 36-month covariance of the seven funds (an expanding window for the first three years), then rebalanced monthly. Each month's return is never part of its own window, so there is no look-ahead.</p>
+            <p><b>Rate-risk cap.</b> Plain equal risk contribution lets interest-rate risk dominate, because several of the funds tend to lose when yields rise. So the weights are the closest thing to equal risk contribution (constrained risk budgeting, Richard &amp; Roncalli 2019) that keeps the share of portfolio variance explained by 10-year Treasury yield moves at or below 20%. Each fund's sensitivity is its trailing beta to monthly changes in the 10-year yield (FRED DGS10). Betas are shrunk toward zero when statistically weak, and a fund that tends to rise with yields isn't allowed to offset bond risk. The cap was binding in about two thirds of months.</p>
             <p>Leverage is the benchmark mix's trailing volatility divided by risk parity's trailing volatility, capped at your maximum. Borrowing costs the actual monthly effective fed funds rate (FRED FEDFUNDS) plus the chosen spread, which mirrors how Interactive Brokers prices margin. When less than 1× is needed, the rest sits in cash earning the 3-month T-bill rate (FRED TB3MS).</p>
-            <p><b>Leverage creep.</b> With pure volatility matching, leverage rises in calm markets, and high leverage tended to come right before underperformance. In this data, at 60/40 the correlation between leverage and the next 12 months' return versus the benchmark was −0.50. Leverage peaked at 2.5× in late 2012, before the 2013 taper tantrum, and neared 2× in 2021, before the 2022 stock–bond selloff. The leverage control setting adds one of these guards:</p>
+            <p><b>Carry rule.</b> Borrowing to hold a bond fund only pays if the fund yields more than the loan costs. So in a month when leverage is above 1×, VBTLX and VIPIX are held at 1× (their unlevered weight) whenever their yield at the end of the previous month is below the margin rate (fed funds + your chosen spread). The other funds are scaled up to keep the portfolio's expected volatility at the leverage target, without exceeding the max-leverage setting. "Leverage" then means total exposure. VBTLX's yield is an estimate of the Bloomberg US Aggregate index's yield-to-worst (7-year Treasury plus corporate and mortgage spreads, calibrated to published index yields). VIPIX's is the 7-year TIPS real yield plus 7-year breakeven inflation (FRED DFII7, T7YIEM). Vanguard doesn't publish its funds' historical SEC yields. The rule works with every leverage control, and a lower margin spread makes it trigger less often. Turning it off levers all seven funds equally.</p>
+            <p><b>Leverage creep.</b> With pure volatility matching, leverage rises in calm markets, and high leverage tended to come right before underperformance. In this data, at 60/40 with no control, the correlation between leverage and the next 12 months' return versus the benchmark was −0.37. Leverage peaked at 2.2× in early 2013, just before the taper tantrum, and was about 1.75× at the end of 2021, just before the 2022 stock–bond selloff. The leverage control setting adds one of these guards:</p>
             <p><b>Trend filter</b> drops to 1× (no borrowing) whenever unlevered risk parity is below its moving average. <b>Vol floor</b> never lets risk parity's trailing volatility count as lower than its long-run (expanding-window) volatility, so calm spells can't inflate leverage. <b>Leverage ceiling</b> caps leverage at a multiple of the average leverage used so far. <b>Trend filter + vol floor</b> combines the first two and is the default. <b>None</b> is the raw volatility match.</p>
             <p>The trend filter uses the classic 10-month moving average rule. It is not optimized, and results were similar for 6–12 months. The vol floor has no parameter. Because the trend filter leaves the strategy at 1× in downtrends, its realized volatility ends up below the benchmark's.</p>
             <p>Fund returns are total returns net of fund expenses. There are no taxes, trading costs or margin-call mechanics.</p>
@@ -146,8 +149,9 @@ const pct = (v, d = 1) => (v * 100).toFixed(d) + "%";
 const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const mlabel = m => MON[+m.slice(5, 7) - 1] + " " + m.slice(0, 4);
 
-const A = ["VIPIX", "QQQ", "VGSLX", "GLD", "PNRZX", "VBTLX"];
-const LB = 36, MINH = 12, NA = A.length;
+let A = ["VIPIX", "QQQ", "VGSLX", "GLD", "PNRZX", "VBTLX", "VGENX"];
+const LB = 36, MINH = 12;
+let NA = A.length;
 let D = null, chart1 = null, chart2 = null, last = null;
 
 /* ---------- pure math ---------- */
@@ -187,11 +191,34 @@ function rpVolOf(w, C) {
 }
 function benchSeries(s) { return D.returns.VFINX.map((v, k) => s * v + (1 - s) * D.returns.VBMFX[k]); }
 // weights + volatilities for a window lo..hi-1 (rows < hi only); vexp uses all rows 0..hi-1
+// weights for the month at row hi: precomputed rate-capped risk budgeting from the data file (plain ERC as a fallback)
+function weightsAt(hi, C) {
+  const W = D.weights; if (W && hi - W.first >= 0 && hi - W.first < W.w.length) return W.w[hi - W.first];
+  return erc(C);
+}
 function plan(lo, hi, bench) {
-  const C = covMatrix(lo, hi), w = erc(C), v = rpVolOf(w, C);
+  const C = covMatrix(lo, hi), w = weightsAt(hi, C), v = rpVolOf(w, C);
   const bv = stdev(bench.slice(lo, hi)) * Math.sqrt(12);
   const vexp = rpVolOf(w, covMatrix(0, hi));
-  return { w, v, vexp, bv };
+  return { w, v, vexp, bv, C };
+}
+// carry rule: with target leverage L > 1, bond funds whose prior month-end yield < margin rate stay at 1x their weight;
+// the rest are scaled by k >= 1 so ex-ante variance x'Cx equals L^2 w'Cw, with total exposure <= maxLev.
+function exposures(w, C, L, t, spread, maxLev, carry) {
+  const x = w.map(v => v * L), held = [];
+  if (!carry || L <= 1 || !D.yields || t < 1) return { x, held };
+  const margin = D.fedfunds[t - 1] / 100 + spread;
+  const elig = A.map(k => !(D.yields.bonds.includes(k)) || (D.yields[k][t - 1] != null && D.yields[k][t - 1] / 100 > margin));
+  if (elig.every(Boolean)) return { x, held };
+  A.forEach((k, i) => { if (!elig[i]) held.push(k); });
+  if (!elig.some(Boolean)) return { x: w.slice(), held };
+  const a = w.map((v, i) => elig[i] ? 0 : v), b = w.map((v, i) => elig[i] ? v : 0);
+  const q = (u, z) => { let s = 0; for (let i = 0; i < NA; i++) for (let j = 0; j < NA; j++) s += u[i] * C[i][j] * z[j]; return s; };
+  const qa = q(b, b), qb = 2 * q(a, b), qc = q(a, a) - L * L * q(w, w);
+  let k = (-qb + Math.sqrt(Math.max(qb * qb - 4 * qa * qc, 0))) / (2 * qa);
+  const sa = a.reduce((s, v) => s + v, 0), sb = b.reduce((s, v) => s + v, 0);
+  k = Math.max(1, Math.min(k, (maxLev - sa) / sb));
+  return { x: a.map((v, i) => v + k * b[i]), held };
 }
 const CTL_DEFAULT = { trend: 10, trendfloor: 10, ceiling: 1.25 };
 function cleanParam(ctl, p) {
@@ -219,40 +246,44 @@ function stats(r, rf) {
 }
 function curve(r) { const o = [10000]; for (const v of r) o.push(o[o.length - 1] * (1 + v)); return o; }
 
-function runModel(stockPct, spread, maxLev, ctl = "none", param) {
+function runModel(stockPct, spread, maxLev, ctl = "none", param, carry = true) {
   if (!(ctl in { none: 1, floor: 1, ceiling: 1, trend: 1, trendfloor: 1 })) ctl = "none";
   const p = cleanParam(ctl, param === undefined ? CTL_DEFAULT[ctl] : param);
   const s = stockPct / 100, N = D.months.length, bench = benchSeries(s);
-  const rLev = [], rBen = [], rRp = [], rf = [], levs = [], raws = [], idx = [1];
+  const rLev = [], rBen = [], rRp = [], rf = [], levs = [], raws = [], idx = [1]; let held = 0;
   for (let t = MINH; t < N; t++) {
     const q = plan(Math.max(0, t - LB), t, bench), w = q.w;
-    const { raw, L } = decide(ctl, p, maxLev, q, raws, idx);
-    let rp = 0; for (let i = 0; i < NA; i++) rp += w[i] * D.returns[A[i]][t];
+    const { raw, L: Lt } = decide(ctl, p, maxLev, q, raws, idx);
+    const ex = exposures(w, q.C, Lt, t, spread, maxLev, carry); if (ex.held.length) held++;
+    let rp = 0, rx = 0, L = 0;
+    for (let i = 0; i < NA; i++) { rp += w[i] * D.returns[A[i]][t]; rx += ex.x[i] * D.returns[A[i]][t]; L += ex.x[i]; }
     idx.push(idx[idx.length - 1] * (1 + rp)); raws.push(raw);
     const rate = L > 1 ? (D.fedfunds[t] / 100 + spread) / 12 : D.tbill[t] / 100 / 12;
-    rLev.push(L * rp + (1 - L) * rate); rBen.push(bench[t]); rRp.push(rp);
+    rLev.push(rx + (1 - L) * rate); rBen.push(bench[t]); rRp.push(rp);
     rf.push(D.tbill[t] / 100 / 12); levs.push(L);
   }
-  const cur = plan(N - LB, N, bench), now = decide(ctl, p, maxLev, cur, raws, idx);
+  const cur = plan(N - LB, N, bench), now0 = decide(ctl, p, maxLev, cur, raws, idx);
+  const exNow = exposures(cur.w, cur.C, now0.L, N, spread, maxLev, carry);
+  const now = { L: exNow.x.reduce((a, b) => a + b, 0), held: exNow.held };
   const weightsNow = {}; A.forEach((k, i) => weightsNow[k] = cur.w[i]);
   return {
     lev: stats(rLev, rf), bench: stats(rBen, rf), rp1: stats(rRp, rf),
     avgLev: levs.reduce((a, b) => a + b, 0) / levs.length, lastLev: levs[levs.length - 1],
     maxLevUsed: Math.max(...levs), L: levs, Lraw: raws, control: ctl, param: p,
-    weightsNow, levNow: now.L, start: D.months[MINH], end: D.months[N - 1],
+    weightsNow, levNow: now.L, heldNow: now.held, carry, heldPct: held / levs.length, start: D.months[MINH], end: D.months[N - 1],
     series: { lev: curve(rLev), bench: curve(rBen), rp1: curve(rRp), levs }
   };
 }
 window.__rp = {
-  run(stockPct, spread, maxLev, control = "none", param) { const { series, ...o } = runModel(stockPct, spread, maxLev, control, param); return o; }
+  run(stockPct, spread, maxLev, control = "none", param, carry = true) { const { series, ...o } = runModel(stockPct, spread, maxLev, control, param, carry); return o; }
 };
 
 /* ---------- UI ---------- */
 const KEY = "calc-risk-parity";
-const DEFAULTS = { mix: "60", spread: "0.015", maxlev: "4", log: true, ctl: "trendfloor", pm: "10", pc: "1.25" };
-function setInputs(o) { $("mix").value = o.mix; $("spread").value = o.spread; $("maxlev").value = o.maxlev; $("log").checked = !!o.log; $("ctl").value = o.ctl; $("pm").value = o.pm; $("pc").value = o.pc; }
+const DEFAULTS = { mix: "60", spread: "0.015", maxlev: "4", log: true, carry: true, ctl: "trendfloor", pm: "10", pc: "1.25" };
+function setInputs(o) { $("mix").value = o.mix; $("spread").value = o.spread; $("maxlev").value = o.maxlev; $("log").checked = !!o.log; $("carry").checked = o.carry !== false; $("ctl").value = o.ctl; $("pm").value = o.pm; $("pc").value = o.pc; }
 function getInputs() {
-  return { mix: $("mix").value, spread: $("spread").value, maxlev: $("maxlev").value, log: $("log").checked, ctl: $("ctl").value,
+  return { mix: $("mix").value, spread: $("spread").value, maxlev: $("maxlev").value, log: $("log").checked, carry: $("carry").checked, ctl: $("ctl").value,
     pm: String(cleanParam("trend", $("pm").value)), pc: String(cleanParam("ceiling", $("pc").value)) };
 }
 const CTL_NAME = { trendfloor: "the trend filter + vol floor", trend: "the trend filter", floor: "the vol floor", ceiling: "the leverage ceiling", none: "no leverage control" };
@@ -272,7 +303,7 @@ try {
   if ($("maxlev").selectedIndex < 0) $("maxlev").value = DEFAULTS.maxlev;
   if ($("ctl").selectedIndex < 0) $("ctl").value = DEFAULTS.ctl;
 } catch (e) {}
-["mix", "spread", "maxlev", "log", "ctl", "pm", "pc"].forEach(id => $(id).addEventListener("input", render));
+["mix", "spread", "maxlev", "log", "carry", "ctl", "pm", "pc"].forEach(id => $(id).addEventListener("input", render));
 ["pm", "pc"].forEach(id => $(id).addEventListener("change", () => { const g = getInputs(); $("pm").value = g.pm; $("pc").value = g.pc; render(); }));
 $("reset").onclick = () => { setInputs(DEFAULTS); render(); };
 
@@ -290,11 +321,12 @@ function render() {
   $("fm").hidden = !(ctl === "trend" || ctl === "trendfloor");
   $("fc").hidden = ctl !== "ceiling";
   $("ctlHint").textContent = ctlHint(ctl, m, c);
-  const r = last = runModel(sp, +inp.spread, +inp.maxlev, ctl, ctl === "ceiling" ? c : m);
+  const r = last = runModel(sp, +inp.spread, +inp.maxlev, ctl, ctl === "ceiling" ? c : m, inp.carry);
   const lbl = sp + "/" + (100 - sp);
   $("content").hidden = false;
 
-  $("lead").textContent = `With ${CTL_NAME[ctl]}, leverage averaged ${r.avgLev.toFixed(2)}× (max ${r.maxLevUsed.toFixed(2)}×) to target a ${lbl} portfolio's volatility. Risk parity ended at ${usd(r.lev.final)} vs ${usd(r.bench.final)} for ${lbl}.`;
+  $("lead").textContent = `With ${CTL_NAME[ctl]}, leverage averaged ${r.avgLev.toFixed(2)}× (max ${r.maxLevUsed.toFixed(2)}×) to target a ${lbl} portfolio's volatility. Risk parity ended at ${usd(r.lev.final)} vs ${usd(r.bench.final)} for ${lbl}.` +
+    (r.carry ? ` The carry rule held at least one bond fund at 1× in ${Math.round(r.heldPct * 100)}% of months.` : "");
   const rows = [
     ["Ending value of $10,000", x => usd(x.final)],
     ["CAGR", x => pct(x.cagr, 2)],
@@ -308,7 +340,8 @@ function render() {
     `<tr><td>Max leverage</td><td class="hi">${r.maxLevUsed.toFixed(2)}×</td><td>1.00×</td><td>1.00×</td></tr></tbody>`;
 
   $("chartTitle").textContent = `Growth of $10,000, ${mlabel(r.start)} – ${mlabel(r.end)}`;
-  $("wSub").textContent = `Based on the 36 months to ${mlabel(r.end)}. The ${lbl} mix implies ${r.levNow.toFixed(2)}× leverage today (${CTL_NAME[ctl]}).`;
+  $("wSub").textContent = `Based on the 36 months to ${mlabel(r.end)}. The ${lbl} mix implies ${r.levNow.toFixed(2)}× leverage today (${CTL_NAME[ctl]})` +
+    (r.heldNow.length ? `, with ${r.heldNow.join(" and ")} held at 1× because ${r.heldNow.length > 1 ? "their yields are" : "its yield is"} below the margin rate.` : ".");
   $("wt").innerHTML = A.map(k => {
     const w = r.weightsNow[k];
     return `<li><span class="nm"><b>${k}</b>${D.names[k]}</span><span class="pc">${pct(w, 1)}</span><span class="bar"><i style="width:${(w * 100).toFixed(1)}%"></i></span></li>`;
@@ -387,13 +420,14 @@ function notes() {
     `Sources: ${D.sources.prices}; ${D.sources.fedfunds}; ${D.sources.tbill}. ` +
     `Data runs ${mlabel(D.months[0])} to ${mlabel(D.months[N - 1])}. The backtest runs ${mlabel(D.months[MINH])} to ${mlabel(D.months[N - 1])}: it starts in ${mlabel(D.months[MINH])} because GLD, the youngest fund, launched in Nov 2004 and the model needs 12 months of history. ` +
     `Before 2010, Yahoo's VGSLX history omits some distributions, so those ${D.patches.length} months use the Investor share class VGSIX's return plus the 0.14%/yr fee difference. ` +
+    (D.sources.vbtlxYield ? `Bond yields for the carry rule: VBTLX, ${D.sources.vbtlxYield}; VIPIX, ${D.sources.vipixYield}. ` : "") +
     `Data built ${D.built}.`);
   $("notes").appendChild(t);
   $("funds").innerHTML = Object.keys(D.names).map(k => `<li><b>${k}</b>: ${D.names[k]}</li>`).join("");
 }
 
 fetch("data/risk-parity.json").then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
-  .then(d => { D = d; notes(); render(); })
+  .then(d => { D = d; if (D.assets) { A = D.assets; NA = A.length; } notes(); render(); })
   .catch(e => showError("Couldn't load the backtest data (data/risk-parity.json). Try reloading the page. " + (e && e.message ? "(" + e.message + ")" : "")));
 render();
 </script>
