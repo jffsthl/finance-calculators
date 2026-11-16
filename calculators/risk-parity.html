@@ -57,6 +57,16 @@ details.assume .body{display:flex;flex-direction:column;gap:12px;margin-top:12px
           <div class="ends"><span>0/100</span><span>100/0</span></div>
         </div>
         <p class="hint">Stocks = Vanguard 500 Index (VFINX), bonds = Vanguard Total Bond Market Index (VBMFX).</p>
+        <div class="f full"><label for="ctl">Leverage control</label><div class="in"><select id="ctl">
+          <option value="trendfloor" selected>Trend filter + vol floor (default)</option>
+          <option value="trend">Trend filter</option>
+          <option value="floor">Vol floor</option>
+          <option value="ceiling">Leverage ceiling</option>
+          <option value="none">None (raw volatility match)</option>
+        </select></div></div>
+        <div class="f full" id="fm"><label for="pm">Trend lookback (months)</label><div class="in"><input type="number" id="pm" min="2" max="36" step="1" value="10" inputmode="numeric"></div></div>
+        <div class="f full" id="fc" hidden><label for="pc">Ceiling (× long-run average leverage)</label><div class="in"><input type="number" id="pc" min="1" max="3" step="0.05" value="1.25" inputmode="decimal"></div></div>
+        <p class="hint" id="ctlHint"></p>
         <details class="assume">
           <summary>Assumptions</summary>
           <div class="body">
@@ -108,6 +118,9 @@ details.assume .body{display:flex;flex-direction:column;gap:12px;margin-top:12px
             <h2>How it works</h2>
             <p>Each month, equal-risk-contribution weights are computed from the trailing 36-month covariance of the six funds (an expanding window for the first three years), then rebalanced monthly. Each month's return is never part of its own window, so there is no look-ahead.</p>
             <p>Leverage is the benchmark mix's trailing volatility divided by risk parity's trailing volatility, capped at your maximum. Borrowing costs the actual monthly effective fed funds rate (FRED FEDFUNDS) plus the chosen spread, which mirrors how Interactive Brokers prices margin. When less than 1× is needed, the rest sits in cash earning the 3-month T-bill rate (FRED TB3MS).</p>
+            <p><b>Leverage creep.</b> With pure volatility matching, leverage rises in calm markets, and high leverage tended to come right before underperformance. In this data, at 60/40 the correlation between leverage and the next 12 months' return versus the benchmark was −0.50. Leverage peaked at 2.5× in late 2012, before the 2013 taper tantrum, and neared 2× in 2021, before the 2022 stock–bond selloff. The leverage control setting adds one of these guards:</p>
+            <p><b>Trend filter</b> drops to 1× (no borrowing) whenever unlevered risk parity is below its moving average. <b>Vol floor</b> never lets risk parity's trailing volatility count as lower than its long-run (expanding-window) volatility, so calm spells can't inflate leverage. <b>Leverage ceiling</b> caps leverage at a multiple of the average leverage used so far. <b>Trend filter + vol floor</b> combines the first two and is the default. <b>None</b> is the raw volatility match.</p>
+            <p>The trend filter uses the classic 10-month moving average rule. It is not optimized, and results were similar for 6–12 months. The vol floor has no parameter. Because the trend filter leaves the strategy at 1× in downtrends, its realized volatility ends up below the benchmark's.</p>
             <p>Fund returns are total returns net of fund expenses. There are no taxes, trading costs or margin-call mechanics.</p>
           </section>
 
@@ -173,11 +186,28 @@ function rpVolOf(w, C) {
   return Math.sqrt(q * 12);
 }
 function benchSeries(s) { return D.returns.VFINX.map((v, k) => s * v + (1 - s) * D.returns.VBMFX[k]); }
-// weights + leverage for a window lo..hi-1
-function plan(lo, hi, bench, maxLev) {
+// weights + volatilities for a window lo..hi-1 (rows < hi only); vexp uses all rows 0..hi-1
+function plan(lo, hi, bench) {
   const C = covMatrix(lo, hi), w = erc(C), v = rpVolOf(w, C);
   const bv = stdev(bench.slice(lo, hi)) * Math.sqrt(12);
-  return { w, L: Math.min(maxLev, bv / v) };
+  const vexp = rpVolOf(w, covMatrix(0, hi));
+  return { w, v, vexp, bv };
+}
+const CTL_DEFAULT = { trend: 10, trendfloor: 10, ceiling: 1.25 };
+function cleanParam(ctl, p) {
+  if (ctl === "ceiling") { p = +p; return isFinite(p) ? Math.min(3, Math.max(1, p)) : 1.25; }
+  if (ctl === "trend" || ctl === "trendfloor") { p = Math.round(+p); return isFinite(p) ? Math.min(36, Math.max(2, p)) : 10; }
+  return null;
+}
+const mean = (a, from = 0) => { let s = 0; for (let i = from; i < a.length; i++) s += a[i]; return s / (a.length - from); };
+// leverage for one month under a control; rawHist = earlier Lraw values, idx = unlevered RP growth index so far
+function decide(ctl, p, maxLev, q, rawHist, idx) {
+  const raw = Math.min(maxLev, q.bv / q.v);
+  let L = raw;
+  if (ctl === "floor" || ctl === "trendfloor") L = Math.min(maxLev, q.bv / Math.max(q.v, q.vexp));
+  if (ctl === "ceiling" && rawHist.length) L = Math.min(L, p * mean(rawHist));
+  if ((ctl === "trend" || ctl === "trendfloor") && idx.length >= p && idx[idx.length - 1] < mean(idx, idx.length - p)) L = Math.min(L, 1);
+  return { raw, L };
 }
 function stats(r, rf) {
   const n = r.length; let g = 1, peak = 1, mdd = 0, ex = 0;
@@ -189,41 +219,61 @@ function stats(r, rf) {
 }
 function curve(r) { const o = [10000]; for (const v of r) o.push(o[o.length - 1] * (1 + v)); return o; }
 
-function runModel(stockPct, spread, maxLev) {
+function runModel(stockPct, spread, maxLev, ctl = "none", param) {
+  if (!(ctl in { none: 1, floor: 1, ceiling: 1, trend: 1, trendfloor: 1 })) ctl = "none";
+  const p = cleanParam(ctl, param === undefined ? CTL_DEFAULT[ctl] : param);
   const s = stockPct / 100, N = D.months.length, bench = benchSeries(s);
-  const rLev = [], rBen = [], rRp = [], rf = [], levs = [];
+  const rLev = [], rBen = [], rRp = [], rf = [], levs = [], raws = [], idx = [1];
   for (let t = MINH; t < N; t++) {
-    const { w, L } = plan(Math.max(0, t - LB), t, bench, maxLev);
+    const q = plan(Math.max(0, t - LB), t, bench), w = q.w;
+    const { raw, L } = decide(ctl, p, maxLev, q, raws, idx);
     let rp = 0; for (let i = 0; i < NA; i++) rp += w[i] * D.returns[A[i]][t];
+    idx.push(idx[idx.length - 1] * (1 + rp)); raws.push(raw);
     const rate = L > 1 ? (D.fedfunds[t] / 100 + spread) / 12 : D.tbill[t] / 100 / 12;
     rLev.push(L * rp + (1 - L) * rate); rBen.push(bench[t]); rRp.push(rp);
     rf.push(D.tbill[t] / 100 / 12); levs.push(L);
   }
-  const cur = plan(N - LB, N, bench, maxLev);
+  const cur = plan(N - LB, N, bench), now = decide(ctl, p, maxLev, cur, raws, idx);
   const weightsNow = {}; A.forEach((k, i) => weightsNow[k] = cur.w[i]);
   return {
     lev: stats(rLev, rf), bench: stats(rBen, rf), rp1: stats(rRp, rf),
     avgLev: levs.reduce((a, b) => a + b, 0) / levs.length, lastLev: levs[levs.length - 1],
-    weightsNow, levNow: cur.L, start: D.months[MINH], end: D.months[N - 1],
+    maxLevUsed: Math.max(...levs), L: levs, Lraw: raws, control: ctl, param: p,
+    weightsNow, levNow: now.L, start: D.months[MINH], end: D.months[N - 1],
     series: { lev: curve(rLev), bench: curve(rBen), rp1: curve(rRp), levs }
   };
 }
 window.__rp = {
-  run(stockPct, spread, maxLev) { const { series, ...o } = runModel(stockPct, spread, maxLev); return o; }
+  run(stockPct, spread, maxLev, control = "none", param) { const { series, ...o } = runModel(stockPct, spread, maxLev, control, param); return o; }
 };
 
 /* ---------- UI ---------- */
 const KEY = "calc-risk-parity";
-const DEFAULTS = { mix: "60", spread: "0.015", maxlev: "4", log: true };
-function setInputs(o) { $("mix").value = o.mix; $("spread").value = o.spread; $("maxlev").value = o.maxlev; $("log").checked = !!o.log; }
-function getInputs() { return { mix: $("mix").value, spread: $("spread").value, maxlev: $("maxlev").value, log: $("log").checked }; }
+const DEFAULTS = { mix: "60", spread: "0.015", maxlev: "4", log: true, ctl: "trendfloor", pm: "10", pc: "1.25" };
+function setInputs(o) { $("mix").value = o.mix; $("spread").value = o.spread; $("maxlev").value = o.maxlev; $("log").checked = !!o.log; $("ctl").value = o.ctl; $("pm").value = o.pm; $("pc").value = o.pc; }
+function getInputs() {
+  return { mix: $("mix").value, spread: $("spread").value, maxlev: $("maxlev").value, log: $("log").checked, ctl: $("ctl").value,
+    pm: String(cleanParam("trend", $("pm").value)), pc: String(cleanParam("ceiling", $("pc").value)) };
+}
+const CTL_NAME = { trendfloor: "the trend filter + vol floor", trend: "the trend filter", floor: "the vol floor", ceiling: "the leverage ceiling", none: "no leverage control" };
+function ctlHint(ctl, m, c) {
+  return {
+    trendfloor: `Leverage only when risk parity is above its ${m}-month average; volatility is never assumed lower than its long-run level.`,
+    trend: `Drop to 1× (no borrowing) whenever risk parity is below its ${m}-month average.`,
+    floor: "Never assume risk parity is calmer than its long-run (since-2004) volatility, so calm spells don't inflate leverage.",
+    ceiling: `Never lever more than ${c}× the average leverage used so far.`,
+    none: "Leverage purely from trailing 36-month volatility (no protection against leverage creep)."
+  }[ctl];
+}
 try {
   const s = JSON.parse(localStorage.getItem(KEY) || "null");
   if (s) setInputs({ ...DEFAULTS, ...s });
   if ($("spread").selectedIndex < 0) $("spread").value = DEFAULTS.spread;
   if ($("maxlev").selectedIndex < 0) $("maxlev").value = DEFAULTS.maxlev;
+  if ($("ctl").selectedIndex < 0) $("ctl").value = DEFAULTS.ctl;
 } catch (e) {}
-["mix", "spread", "maxlev", "log"].forEach(id => $(id).addEventListener("input", render));
+["mix", "spread", "maxlev", "log", "ctl", "pm", "pc"].forEach(id => $(id).addEventListener("input", render));
+["pm", "pc"].forEach(id => $(id).addEventListener("change", () => { const g = getInputs(); $("pm").value = g.pm; $("pc").value = g.pc; render(); }));
 $("reset").onclick = () => { setInputs(DEFAULTS); render(); };
 
 function showError(msg) {
@@ -236,11 +286,15 @@ function render() {
   $("mixOut").textContent = sp + "% stocks / " + (100 - sp) + "% bonds";
   try { localStorage.setItem(KEY, JSON.stringify(inp)); } catch (e) {}
   if (!D) return;
-  const r = last = runModel(sp, +inp.spread, +inp.maxlev);
+  const ctl = inp.ctl, m = +inp.pm, c = +inp.pc;
+  $("fm").hidden = !(ctl === "trend" || ctl === "trendfloor");
+  $("fc").hidden = ctl !== "ceiling";
+  $("ctlHint").textContent = ctlHint(ctl, m, c);
+  const r = last = runModel(sp, +inp.spread, +inp.maxlev, ctl, ctl === "ceiling" ? c : m);
   const lbl = sp + "/" + (100 - sp);
   $("content").hidden = false;
 
-  $("lead").textContent = `Matching a ${lbl} portfolio's volatility took ${r.avgLev.toFixed(2)}× leverage on average. Risk parity ended at ${usd(r.lev.final)} vs ${usd(r.bench.final)} for ${lbl}.`;
+  $("lead").textContent = `With ${CTL_NAME[ctl]}, leverage averaged ${r.avgLev.toFixed(2)}× (max ${r.maxLevUsed.toFixed(2)}×) to target a ${lbl} portfolio's volatility. Risk parity ended at ${usd(r.lev.final)} vs ${usd(r.bench.final)} for ${lbl}.`;
   const rows = [
     ["Ending value of $10,000", x => usd(x.final)],
     ["CAGR", x => pct(x.cagr, 2)],
@@ -250,15 +304,16 @@ function render() {
   ];
   $("cmp").innerHTML = `<thead><tr><th scope="col"></th><th scope="col">Risk parity (levered)</th><th scope="col">${lbl} benchmark</th><th scope="col">Risk parity (1×)</th></tr></thead><tbody>` +
     rows.map(([k, f]) => `<tr><td>${k}</td><td class="hi">${f(r.lev)}</td><td>${f(r.bench)}</td><td>${f(r.rp1)}</td></tr>`).join("") +
-    `<tr><td>Avg leverage</td><td class="hi">${r.avgLev.toFixed(2)}×</td><td>1.00×</td><td>1.00×</td></tr></tbody>`;
+    `<tr><td>Avg leverage</td><td class="hi">${r.avgLev.toFixed(2)}×</td><td>1.00×</td><td>1.00×</td></tr>` +
+    `<tr><td>Max leverage</td><td class="hi">${r.maxLevUsed.toFixed(2)}×</td><td>1.00×</td><td>1.00×</td></tr></tbody>`;
 
   $("chartTitle").textContent = `Growth of $10,000, ${mlabel(r.start)} – ${mlabel(r.end)}`;
-  $("wSub").textContent = `Based on the 36 months to ${mlabel(r.end)}. The ${lbl} mix implies ${r.levNow.toFixed(2)}× leverage today.`;
+  $("wSub").textContent = `Based on the 36 months to ${mlabel(r.end)}. The ${lbl} mix implies ${r.levNow.toFixed(2)}× leverage today (${CTL_NAME[ctl]}).`;
   $("wt").innerHTML = A.map(k => {
     const w = r.weightsNow[k];
     return `<li><span class="nm"><b>${k}</b>${D.names[k]}</span><span class="pc">${pct(w, 1)}</span><span class="bar"><i style="width:${(w * 100).toFixed(1)}%"></i></span></li>`;
   }).join("");
-  draw(r, lbl, inp.log);
+  draw(r, lbl, inp.log, ctl !== "none");
 }
 
 const FF = '"Public Sans", system-ui, sans-serif';
@@ -277,7 +332,7 @@ function baseOpts() {
     }
   };
 }
-function draw(r, lbl, logScale) {
+function draw(r, lbl, logScale, showRaw) {
   if (typeof Chart === "undefined") return;
   const months = [D.months[MINH - 1], ...D.months.slice(MINH)];
   const lastIdx = months.length - 1;
@@ -312,8 +367,10 @@ function draw(r, lbl, logScale) {
   o2.scales.y.beginAtZero = true;
   o2.scales.y.ticks.callback = v => v + "×";
   o2.scales.y.ticks.maxTicksLimit = 5;
+  o2.plugins.legend = { display: true, position: "top", align: "start", labels: { color: css("--ink-2"), boxWidth: 12, boxHeight: 12, font: { family: FF }, filter: it => it.text !== "1×" } };
   const ds2 = [
-    { label: "Leverage", data: r.series.levs, borderColor: css("--s1"), backgroundColor: css("--s1"), borderWidth: 2, pointRadius: 0, pointHoverRadius: 3 },
+    { label: "Leverage", data: r.series.levs, borderColor: css("--s1"), backgroundColor: css("--s1"), borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 3, order: 1 },
+    ...(showRaw ? [{ label: "Without control", data: r.Lraw, borderColor: css("--muted"), backgroundColor: css("--muted"), borderWidth: 1, borderDash: [2, 2], pointRadius: 0, pointHoverRadius: 3, order: 2 }] : []),
     { label: "1×", data: lm.map(() => 1), borderColor: css("--muted"), borderWidth: 1, borderDash: [4, 4], pointRadius: 0, pointHoverRadius: 0 },
   ];
   if (chart2) { chart2.data.labels = lm; chart2.data.datasets = ds2; chart2.options = o2; chart2.update(); }
