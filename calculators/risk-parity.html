@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Risk Parity Backtest</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="shared.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+.errbox{border:1px solid var(--bad);border-radius:10px;padding:14px 16px;background:var(--surface);color:var(--bad);font-size:14px}
+.how p{margin:0 0 8px;font-size:13.5px;color:var(--ink-2);max-width:78ch}
+[hidden]{display:none!important}
+.mix{display:flex;flex-direction:column;gap:6px;grid-column:1/-1}
+.mix output{font:500 15px "IBM Plex Mono",ui-monospace,monospace;color:var(--ink)}
+.mix input[type=range]{width:100%;accent-color:var(--accent)}
+.ends{display:flex;justify-content:space-between;font-size:12px;color:var(--muted)}
+details.assume{grid-column:1/-1}
+details.assume summary{font-size:13px}
+details.assume .body{display:flex;flex-direction:column;gap:12px;margin-top:12px}
+.chk{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-2)}
+.chk input{accent-color:var(--accent)}
+.lead{margin:0 0 12px;font-size:15px;color:var(--ink);max-width:72ch}
+.cmp th:first-child{position:static}
+.cmp td:first-child{color:var(--ink-2)}
+.cmp td.hi{font-weight:600}
+.chart.short{height:160px}
+.wt{display:grid;grid-template-columns:minmax(0,1fr) 56px;gap:2px 12px;margin:0;padding:0;list-style:none}
+.wt li{display:contents}
+.wt .nm{font-size:13.5px;color:var(--ink-2)}
+.wt .nm b{color:var(--ink);font-weight:600;margin-right:6px}
+.wt .pc{text-align:right;font:500 13px "IBM Plex Mono",ui-monospace,monospace}
+.wt .bar{grid-column:1/-1;height:5px;border-radius:3px;background:var(--accent-soft);margin-bottom:8px;overflow:hidden}
+.wt .bar i{display:block;height:100%;background:var(--s1);border-radius:3px}
+.funds{margin:8px 0 0;padding-left:18px}
+.disc{border:1px solid var(--line);border-radius:10px;padding:12px 16px;font-size:12.5px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Risk Parity Backtest</h1>
+    <p>Six diversified funds sized so each contributes equal risk, then levered to match the volatility of a stock/bond mix. Backtested with real margin costs.</p>
+  </header>
+
+  <div class="layout">
+    <aside aria-label="Inputs">
+      <fieldset>
+        <legend>Compare against</legend>
+        <div class="mix">
+          <label for="mix">Match the volatility of</label>
+          <output id="mixOut" for="mix"></output>
+          <input type="range" id="mix" min="0" max="100" step="10" value="60">
+          <div class="ends"><span>0/100</span><span>100/0</span></div>
+        </div>
+        <p class="hint">Stocks = Vanguard 500 Index (VFINX), bonds = Vanguard Total Bond Market Index (VBMFX).</p>
+        <details class="assume">
+          <summary>Assumptions</summary>
+          <div class="body">
+            <div class="f"><label for="spread">Margin rate</label><div class="in"><select id="spread">
+              <option value="0.005">Fed funds + 0.5% (IBKR Pro, $1M–$50M tier)</option>
+              <option value="0.01">Fed funds + 1.0% (IBKR Pro, $100k–$1M)</option>
+              <option value="0.015" selected>Fed funds + 1.5% (IBKR Pro, under $100k)</option>
+              <option value="0.03">Fed funds + 3.0% (higher-cost broker)</option>
+            </select></div></div>
+            <div class="f"><label for="maxlev">Max leverage</label><div class="in"><select id="maxlev">
+              <option value="2">2× (Reg T)</option>
+              <option value="3">3×</option>
+              <option value="4" selected>4× (portfolio margin)</option>
+              <option value="5">5×</option>
+            </select></div></div>
+            <label class="chk"><input type="checkbox" id="log" checked> Log scale</label>
+          </div>
+        </details>
+      </fieldset>
+      <button type="button" class="reset" id="reset">Reset to defaults</button>
+    </aside>
+
+    <main aria-live="polite">
+      <div id="errs"></div>
+      <div id="content" hidden>
+        <div style="display:flex;flex-direction:column;gap:20px">
+          <section class="panel" id="statsPanel">
+            <p class="lead" id="lead"></p>
+            <div class="tbl"><table class="cmp" id="cmp"></table></div>
+          </section>
+
+          <section class="panel">
+            <h2 id="chartTitle">Growth of $10,000</h2>
+            <div class="chart"><canvas id="c1" role="img" aria-label="Line chart of growth of $10,000 for levered risk parity, the benchmark mix and unlevered risk parity"></canvas></div>
+          </section>
+
+          <section class="panel">
+            <h2>Leverage used</h2>
+            <div class="chart short"><canvas id="c2" role="img" aria-label="Line chart of leverage used by the levered risk parity portfolio over time"></canvas></div>
+          </section>
+
+          <section class="panel">
+            <h2>Current risk-parity weights</h2>
+            <p class="sub" id="wSub"></p>
+            <ul class="wt" id="wt"></ul>
+          </section>
+
+          <section class="panel how">
+            <h2>How it works</h2>
+            <p>Each month, equal-risk-contribution weights are computed from the trailing 36-month covariance of the six funds (an expanding window for the first three years), then rebalanced monthly. Each month's return is never part of its own window, so there is no look-ahead.</p>
+            <p>Leverage is the benchmark mix's trailing volatility divided by risk parity's trailing volatility, capped at your maximum. Borrowing costs the actual monthly effective fed funds rate (FRED FEDFUNDS) plus the chosen spread, which mirrors how Interactive Brokers prices margin. When less than 1× is needed, the rest sits in cash earning the 3-month T-bill rate (FRED TB3MS).</p>
+            <p>Fund returns are total returns net of fund expenses. There are no taxes, trading costs or margin-call mechanics.</p>
+          </section>
+
+          <section class="panel">
+            <h2>Data notes</h2>
+            <p class="note" id="notes"></p>
+            <ul class="note funds" id="funds"></ul>
+          </section>
+
+          <p class="disc">This is a hypothetical backtest. Past performance does not predict future results. Leverage magnifies losses as well as gains. Many brokers do not lend against mutual funds, so an implementation would typically use ETF share classes or futures. For education only, not investment advice.</p>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const usd = v => (v < 0 ? "-" : "") + "$" + Math.abs(v).toLocaleString("en-US", { maximumFractionDigits: 0 });
+const usdK = v => Math.abs(v) >= 1e6 ? "$" + +(v / 1e6).toFixed(1) + "M" : Math.abs(v) >= 1000 ? "$" + +(v / 1000).toFixed(v >= 1e5 ? 0 : 1) + "k" : "$" + Math.round(v);
+const pct = (v, d = 1) => (v * 100).toFixed(d) + "%";
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const mlabel = m => MON[+m.slice(5, 7) - 1] + " " + m.slice(0, 4);
+
+const A = ["VIPIX", "QQQ", "VGSLX", "GLD", "PNRZX", "VBTLX"];
+const LB = 36, MINH = 12, NA = A.length;
+let D = null, chart1 = null, chart2 = null, last = null;
+
+/* ---------- pure math ---------- */
+function stdev(a) {
+  const n = a.length; let m = 0; for (const v of a) m += v; m /= n;
+  let s = 0; for (const v of a) s += (v - m) * (v - m);
+  return Math.sqrt(s / (n - 1));
+}
+function covMatrix(lo, hi) { // rows lo..hi-1
+  const n = hi - lo, mean = A.map(k => { let s = 0; for (let r = lo; r < hi; r++) s += D.returns[k][r]; return s / n; });
+  const C = [];
+  for (let i = 0; i < NA; i++) { C.push([]); for (let j = 0; j < NA; j++) {
+    if (j < i) { C[i].push(C[j][i]); continue; }
+    let s = 0; const ri = D.returns[A[i]], rj = D.returns[A[j]];
+    for (let r = lo; r < hi; r++) s += (ri[r] - mean[i]) * (rj[r] - mean[j]);
+    C[i].push(s / (n - 1));
+  } }
+  return C;
+}
+function erc(C) {
+  const x = C.map((r, i) => 1 / Math.sqrt(r[i]));
+  for (let it = 0; it < 500; it++) {
+    let md = 0;
+    for (let i = 0; i < NA; i++) {
+      let b = 0; for (let j = 0; j < NA; j++) if (j !== i) b += C[i][j] * x[j];
+      const nx = (-b + Math.sqrt(b * b + 4 * C[i][i] / NA)) / (2 * C[i][i]);
+      md = Math.max(md, Math.abs(nx - x[i])); x[i] = nx;
+    }
+    if (md < 1e-12) break;
+  }
+  const s = x.reduce((a, b) => a + b, 0);
+  return x.map(v => v / s);
+}
+function rpVolOf(w, C) {
+  let q = 0; for (let i = 0; i < NA; i++) for (let j = 0; j < NA; j++) q += w[i] * C[i][j] * w[j];
+  return Math.sqrt(q * 12);
+}
+function benchSeries(s) { return D.returns.VFINX.map((v, k) => s * v + (1 - s) * D.returns.VBMFX[k]); }
+// weights + leverage for a window lo..hi-1
+function plan(lo, hi, bench, maxLev) {
+  const C = covMatrix(lo, hi), w = erc(C), v = rpVolOf(w, C);
+  const bv = stdev(bench.slice(lo, hi)) * Math.sqrt(12);
+  return { w, L: Math.min(maxLev, bv / v) };
+}
+function stats(r, rf) {
+  const n = r.length; let g = 1, peak = 1, mdd = 0, ex = 0;
+  for (let k = 0; k < n; k++) {
+    g *= 1 + r[k]; if (g > peak) peak = g; mdd = Math.min(mdd, g / peak - 1); ex += r[k] - rf[k];
+  }
+  const vol = stdev(r) * Math.sqrt(12);
+  return { final: 10000 * g, cagr: Math.pow(g, 12 / n) - 1, vol, mdd, sharpe: (ex / n) * 12 / vol };
+}
+function curve(r) { const o = [10000]; for (const v of r) o.push(o[o.length - 1] * (1 + v)); return o; }
+
+function runModel(stockPct, spread, maxLev) {
+  const s = stockPct / 100, N = D.months.length, bench = benchSeries(s);
+  const rLev = [], rBen = [], rRp = [], rf = [], levs = [];
+  for (let t = MINH; t < N; t++) {
+    const { w, L } = plan(Math.max(0, t - LB), t, bench, maxLev);
+    let rp = 0; for (let i = 0; i < NA; i++) rp += w[i] * D.returns[A[i]][t];
+    const rate = L > 1 ? (D.fedfunds[t] / 100 + spread) / 12 : D.tbill[t] / 100 / 12;
+    rLev.push(L * rp + (1 - L) * rate); rBen.push(bench[t]); rRp.push(rp);
+    rf.push(D.tbill[t] / 100 / 12); levs.push(L);
+  }
+  const cur = plan(N - LB, N, bench, maxLev);
+  const weightsNow = {}; A.forEach((k, i) => weightsNow[k] = cur.w[i]);
+  return {
+    lev: stats(rLev, rf), bench: stats(rBen, rf), rp1: stats(rRp, rf),
+    avgLev: levs.reduce((a, b) => a + b, 0) / levs.length, lastLev: levs[levs.length - 1],
+    weightsNow, levNow: cur.L, start: D.months[MINH], end: D.months[N - 1],
+    series: { lev: curve(rLev), bench: curve(rBen), rp1: curve(rRp), levs }
+  };
+}
+window.__rp = {
+  run(stockPct, spread, maxLev) { const { series, ...o } = runModel(stockPct, spread, maxLev); return o; }
+};
+
+/* ---------- UI ---------- */
+const KEY = "calc-risk-parity";
+const DEFAULTS = { mix: "60", spread: "0.015", maxlev: "4", log: true };
+function setInputs(o) { $("mix").value = o.mix; $("spread").value = o.spread; $("maxlev").value = o.maxlev; $("log").checked = !!o.log; }
+function getInputs() { return { mix: $("mix").value, spread: $("spread").value, maxlev: $("maxlev").value, log: $("log").checked }; }
+try {
+  const s = JSON.parse(localStorage.getItem(KEY) || "null");
+  if (s) setInputs({ ...DEFAULTS, ...s });
+  if ($("spread").selectedIndex < 0) $("spread").value = DEFAULTS.spread;
+  if ($("maxlev").selectedIndex < 0) $("maxlev").value = DEFAULTS.maxlev;
+} catch (e) {}
+["mix", "spread", "maxlev", "log"].forEach(id => $(id).addEventListener("input", render));
+$("reset").onclick = () => { setInputs(DEFAULTS); render(); };
+
+function showError(msg) {
+  $("errs").innerHTML = '<div class="errbox" role="alert">' + msg + "</div>";
+  $("content").hidden = true;
+}
+
+function render() {
+  const inp = getInputs(), sp = +inp.mix;
+  $("mixOut").textContent = sp + "% stocks / " + (100 - sp) + "% bonds";
+  try { localStorage.setItem(KEY, JSON.stringify(inp)); } catch (e) {}
+  if (!D) return;
+  const r = last = runModel(sp, +inp.spread, +inp.maxlev);
+  const lbl = sp + "/" + (100 - sp);
+  $("content").hidden = false;
+
+  $("lead").textContent = `Matching a ${lbl} portfolio's volatility took ${r.avgLev.toFixed(2)}× leverage on average. Risk parity ended at ${usd(r.lev.final)} vs ${usd(r.bench.final)} for ${lbl}.`;
+  const rows = [
+    ["Ending value of $10,000", x => usd(x.final)],
+    ["CAGR", x => pct(x.cagr, 2)],
+    ["Volatility", x => pct(x.vol, 2)],
+    ["Max drawdown", x => pct(x.mdd, 1)],
+    ["Sharpe ratio", x => x.sharpe.toFixed(2)],
+  ];
+  $("cmp").innerHTML = `<thead><tr><th scope="col"></th><th scope="col">Risk parity (levered)</th><th scope="col">${lbl} benchmark</th><th scope="col">Risk parity (1×)</th></tr></thead><tbody>` +
+    rows.map(([k, f]) => `<tr><td>${k}</td><td class="hi">${f(r.lev)}</td><td>${f(r.bench)}</td><td>${f(r.rp1)}</td></tr>`).join("") +
+    `<tr><td>Avg leverage</td><td class="hi">${r.avgLev.toFixed(2)}×</td><td>1.00×</td><td>1.00×</td></tr></tbody>`;
+
+  $("chartTitle").textContent = `Growth of $10,000, ${mlabel(r.start)} – ${mlabel(r.end)}`;
+  $("wSub").textContent = `Based on the 36 months to ${mlabel(r.end)}. The ${lbl} mix implies ${r.levNow.toFixed(2)}× leverage today.`;
+  $("wt").innerHTML = A.map(k => {
+    const w = r.weightsNow[k];
+    return `<li><span class="nm"><b>${k}</b>${D.names[k]}</span><span class="pc">${pct(w, 1)}</span><span class="bar"><i style="width:${(w * 100).toFixed(1)}%"></i></span></li>`;
+  }).join("");
+  draw(r, lbl, inp.log);
+}
+
+const FF = '"Public Sans", system-ui, sans-serif';
+function baseOpts() {
+  const line = css("--line"), muted = css("--muted");
+  return {
+    responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: "index", intersect: false },
+    plugins: {
+      legend: { display: false },
+      tooltip: { backgroundColor: css("--surface"), titleColor: css("--ink"), bodyColor: css("--ink-2"), borderColor: line, borderWidth: 1, padding: 10,
+        titleFont: { family: FF, weight: "600" }, bodyFont: { family: FF } }
+    },
+    scales: {
+      x: { grid: { display: false }, border: { color: line }, ticks: { color: muted, font: { family: FF }, maxRotation: 0, autoSkip: false } },
+      y: { grid: { color: line }, border: { display: false }, ticks: { color: muted, font: { family: FF } } }
+    }
+  };
+}
+function draw(r, lbl, logScale) {
+  if (typeof Chart === "undefined") return;
+  const months = [D.months[MINH - 1], ...D.months.slice(MINH)];
+  const lastIdx = months.length - 1;
+  // label only the first month of each year (every other year when crowded)
+  const yearTick = (val, i) => {
+    const m = months[i]; if (!m) return "";
+    const prev = months[i - 1];
+    return (i === 0 || m.slice(0, 4) !== prev.slice(0, 4)) && (+m.slice(0, 4)) % 2 === 1 ? m.slice(0, 4) : "";
+  };
+  const o1 = baseOpts();
+  o1.plugins.legend = { display: true, position: "top", align: "start", labels: { color: css("--ink-2"), boxWidth: 12, boxHeight: 12, font: { family: FF } } };
+  o1.plugins.tooltip.callbacks = { title: i => mlabel(months[i[0].dataIndex]), label: c => ` ${c.dataset.label}: ${usd(c.parsed.y)}` };
+  o1.scales.x.ticks.callback = yearTick;
+  o1.scales.y.type = logScale ? "logarithmic" : "linear";
+  o1.scales.y.ticks.callback = v => {
+    if (!logScale) return usdK(v);
+    const m = v / Math.pow(10, Math.floor(Math.log10(v)));
+    return [1, 2, 5].some(k => Math.abs(m - k) < 1e-9) ? usdK(v) : "";
+  };
+  const ds = [
+    { label: "Risk parity (levered)", data: r.series.lev, borderColor: css("--s1"), backgroundColor: css("--s1"), borderWidth: 2.75, pointRadius: 0, pointHoverRadius: 4 },
+    { label: lbl + " benchmark", data: r.series.bench, borderColor: css("--s3"), backgroundColor: css("--s3"), borderWidth: 2, pointRadius: 0, pointHoverRadius: 4 },
+    { label: "Risk parity (1×)", data: r.series.rp1, borderColor: css("--muted"), backgroundColor: css("--muted"), borderWidth: 1.25, borderDash: [5, 4], pointRadius: 0, pointHoverRadius: 4 },
+  ];
+  if (chart1) { chart1.data.labels = months; chart1.data.datasets = ds; chart1.options = o1; chart1.update(); }
+  else chart1 = new Chart($("c1"), { type: "line", data: { labels: months, datasets: ds }, options: o1 });
+
+  const lm = months.slice(1);
+  const o2 = baseOpts();
+  o2.plugins.tooltip.callbacks = { title: i => mlabel(lm[i[0].dataIndex]), label: c => ` ${c.dataset.label}: ${c.parsed.y.toFixed(2)}×` };
+  o2.scales.x.ticks.callback = (v, i) => { const m = lm[i]; return m && (i === 0 || m.slice(0, 4) !== lm[i - 1].slice(0, 4)) && (+m.slice(0, 4)) % 2 === 1 ? m.slice(0, 4) : ""; };
+  o2.scales.y.beginAtZero = true;
+  o2.scales.y.ticks.callback = v => v + "×";
+  o2.scales.y.ticks.maxTicksLimit = 5;
+  const ds2 = [
+    { label: "Leverage", data: r.series.levs, borderColor: css("--s1"), backgroundColor: css("--s1"), borderWidth: 2, pointRadius: 0, pointHoverRadius: 3 },
+    { label: "1×", data: lm.map(() => 1), borderColor: css("--muted"), borderWidth: 1, borderDash: [4, 4], pointRadius: 0, pointHoverRadius: 0 },
+  ];
+  if (chart2) { chart2.data.labels = lm; chart2.data.datasets = ds2; chart2.options = o2; chart2.update(); }
+  else chart2 = new Chart($("c2"), { type: "line", data: { labels: lm, datasets: ds2 }, options: o2 });
+}
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+  chart1 && chart1.destroy(); chart2 && chart2.destroy(); chart1 = chart2 = null; render();
+});
+
+function notes() {
+  const N = D.months.length;
+  $("notes").innerHTML = "";
+  const t = document.createTextNode(
+    `Sources: ${D.sources.prices}; ${D.sources.fedfunds}; ${D.sources.tbill}. ` +
+    `Data runs ${mlabel(D.months[0])} to ${mlabel(D.months[N - 1])}. The backtest runs ${mlabel(D.months[MINH])} to ${mlabel(D.months[N - 1])}: it starts in ${mlabel(D.months[MINH])} because GLD, the youngest fund, launched in Nov 2004 and the model needs 12 months of history. ` +
+    `Before 2010, Yahoo's VGSLX history omits some distributions, so those ${D.patches.length} months use the Investor share class VGSIX's return plus the 0.14%/yr fee difference. ` +
+    `Data built ${D.built}.`);
+  $("notes").appendChild(t);
+  $("funds").innerHTML = Object.keys(D.names).map(k => `<li><b>${k}</b>: ${D.names[k]}</li>`).join("");
+}
+
+fetch("data/risk-parity.json").then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+  .then(d => { D = d; notes(); render(); })
+  .catch(e => showError("Couldn't load the backtest data (data/risk-parity.json). Try reloading the page. " + (e && e.message ? "(" + e.message + ")" : "")));
+render();
+</script>
+</body>
+</html>
