@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Fixed-Income Risk-On / Risk-Off Backtest</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="shared.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+.errbox{border:1px solid var(--bad);border-radius:10px;padding:14px 16px;background:var(--surface);color:var(--bad);font-size:14px}
+.how p{margin:0 0 8px;font-size:13.5px;color:var(--ink-2);max-width:78ch}
+[hidden]{display:none!important}
+.chk{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-2)}
+.chk input{accent-color:var(--accent)}
+.lead{margin:0 0 12px;font-size:15px;color:var(--ink);max-width:72ch}
+.cmp th:first-child{position:static}
+.cmp td:first-child{color:var(--ink-2)}
+.cmp td.hi{font-weight:600}
+.band{display:flex;height:18px;border-radius:4px;overflow:hidden;margin:4px 0 6px}
+.band i{flex:1 1 0;min-width:0}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--ink-2)}
+.legend span::before{content:"";display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:6px;vertical-align:-1px;background:var(--c)}
+.yrs{position:relative;height:14px;font-size:11px;color:var(--muted);margin-bottom:6px}.yrs span{position:absolute;transform:translateX(-50%)}
+.disc{border:1px solid var(--line);border-radius:10px;padding:12px 16px;font-size:12.5px;color:var(--muted)}
+.funds{margin:8px 0 0;padding-left:18px}
+.st-U{--c:#2a78d6;background:#2a78d6}.st-N{--c:#c9cdd2;background:#c9cdd2}.st-D{--c:#eb6834;background:#eb6834}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Fixed-Income Risk-On / Risk-Off</h1>
+    <p>Shift a bond portfolio between high yield, core bonds and Treasuries depending on how wide credit spreads are versus their history. Backtested monthly since 1987, unlevered, with no look-ahead.</p>
+  </header>
+  <div class="layout">
+    <aside aria-label="Inputs">
+      <fieldset>
+        <legend>Strategy</legend>
+        <div class="f full"><label for="sig">Credit-spread signal</label><div class="in"><select id="sig">
+          <option value="main" selected>Baa − 10y Treasury, 1953+ history (main)</option>
+          <option value="baa86">Baa − 10y Treasury, history from 1986 only</option>
+          <option value="ice">ICE BofA high-yield OAS (from 2002)</option>
+        </select></div></div>
+        <div class="f full"><label for="var">Rules</label><div class="in"><select id="var">
+          <option value="std" selected>Standard</option>
+          <option value="s1">Risk-off on tight spreads alone (no widening test)</option>
+          <option value="s2">Risk-on without the 12-month minimum hold</option>
+        </select></div></div>
+        <div class="f full"><label for="hy">High-yield fund</label><div class="in"><select id="hy">
+          <option value="VWEHX" selected>VWEHX (Vanguard High-Yield Corporate)</option>
+          <option value="FAGIX">FAGIX (Fidelity Capital &amp; Income)</option>
+        </select></div></div>
+        <div class="f full"><label for="off">Risk-off Treasury fund</label><div class="in"><select id="off">
+          <option value="VFISX" selected>VFISX (short-term Treasury)</option>
+          <option value="VUSTX">VUSTX (long-term Treasury)</option>
+        </select></div></div>
+        <div class="f full"><label for="win">Period</label><div class="in"><select id="win">
+          <option value="full" selected>Full period</option>
+          <option value="2005">Dec 2005 – latest</option>
+        </select></div></div>
+        <label class="chk"><input type="checkbox" id="log" checked> Log scale</label>
+      </fieldset>
+      <button type="button" class="reset" id="reset">Reset to defaults</button>
+    </aside>
+    <main aria-live="polite">
+      <div id="errs"></div>
+      <div id="content" hidden>
+        <div style="display:flex;flex-direction:column;gap:20px">
+          <section class="panel">
+            <p class="lead" id="lead"></p>
+            <div class="tbl"><table class="cmp" id="cmp"></table></div>
+          </section>
+          <section class="panel">
+            <h2 id="chartTitle">Growth of $10,000</h2>
+            <div class="legend" id="bandLegend"><span class="st-U" style="background:none">Risk-on 80% HY / 20% VBMFX</span><span class="st-N" style="background:none">Neutral 40 / 60</span><span class="st-D" style="background:none">Risk-off 50% VBMFX / 50% Treasury fund</span></div>
+            <div class="band" id="band" role="img" aria-label="Timeline of the strategy's state each month"></div>
+            <div class="yrs" id="bandYrs"></div>
+            <div class="chart"><canvas id="c1" role="img" aria-label="Line chart of growth of $10,000 for the strategy and its benchmarks"></canvas></div>
+          </section>
+          <section class="panel">
+            <h2>Episodes</h2>
+            <p class="sub" id="epSub"></p>
+            <div class="tbl"><table class="cmp" id="eps"></table></div>
+          </section>
+          <section class="panel how">
+            <h2>How it works</h2>
+            <p><b>States.</b> Neutral holds 40% high yield and 60% Vanguard Total Bond Market (VBMFX). <b>Risk-on</b> (80/20) starts when the spread is above its 70th percentile <i>and</i> has already come at least 15% off its 3-month peak, so you buy after the panic has turned, not into it. It ends when the spread falls below its 10-year median, but no earlier than 12 months after entry. <b>Risk-off</b> (0% high yield, 50% VBMFX, 50% Treasury fund) starts when the spread is below its 20th percentile <i>and</i> has widened at least 15% off its 6-month low. It ends when the percentile goes back above 40.</p>
+            <p><b>No look-ahead.</b> Everything uses month-end values. The state decided at the end of a month sets the next month's weights, and the portfolio is rebalanced to those weights monthly. Percentiles use an expanding window: today's spread is ranked against all history up to today. Each month the current state's exit is checked first; if the portfolio is then neutral, risk-on entry is checked before risk-off. The two entry conditions can never both be true at once.</p>
+            <p><b>Signals.</b> The main signal is Moody's Baa corporate yield minus the 10-year Treasury yield (FRED BAA10Y, month-end). Its percentile history starts in 1953 (monthly averages before 1986), giving a 33-year burn-in. Because spreads were structurally lower in 1953–1985, the Baa spread never ranked below its 20th percentile after 1986, so this signal <i>never goes risk-off</i>. The "history from 1986 only" option uses a 5-year burn-in (backtest from 1991) and does trigger risk-off. The ICE BofA high-yield option-adjusted spread is the more direct measure. FRED now only publishes its last 3 years, so its history from Dec 1996 is rebuilt from an archived FRED copy and a CC BY 4.0 mirror, with 7 missing month-ends in 2021 estimated from the Baa spread. It gets a 5-year burn-in, so that backtest starts in 2002.</p>
+            <p><b>Small sample.</b> There have been only a handful of credit cycles since 1987, and each signal produces 4–7 episodes. Results lean heavily on a few post-crisis rebounds (2002, 2009, 2016, 2020). The parameters are fixed in advance, not optimized, but treat the outperformance as suggestive rather than proven. Fund returns are total returns net of fund expenses. There are no taxes or trading costs.</p>
+          </section>
+          <section class="panel">
+            <h2>Data notes</h2>
+            <p class="note" id="notes"></p>
+            <ul class="note funds" id="funds"></ul>
+          </section>
+          <p class="disc">This is a hypothetical backtest. Past performance does not predict future results. For education only, not investment advice.</p>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const usd = v => (v < 0 ? "-" : "") + "$" + Math.abs(v).toLocaleString("en-US", { maximumFractionDigits: 0 });
+const usdK = v => Math.abs(v) >= 1e6 ? "$" + +(v / 1e6).toFixed(1) + "M" : Math.abs(v) >= 1000 ? "$" + +(v / 1000).toFixed(v >= 1e5 ? 0 : 1) + "k" : "$" + Math.round(v);
+const pct = (v, d = 1) => v == null || isNaN(v) ? "—" : (v * 100).toFixed(d) + "%";
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const mlabel = m => MON[+m.slice(5, 7) - 1] + " " + m.slice(0, 4);
+const YEARS = ["2008", "2009", "2015", "2020", "2022"];
+const STN = { U: "Risk-on", N: "Neutral", D: "Risk-off" };
+let D = null, chart1 = null;
+
+/* ---------- pure math ---------- */
+function stdev(a) { const n = a.length; let m = 0; for (const v of a) m += v; m /= n; let s = 0; for (const v of a) s += (v - m) * (v - m); return Math.sqrt(s / (n - 1)); }
+function stats(r, rf) {
+  const n = r.length; let g = 1, peak = 1, mdd = 0, ex = 0, dn = 0;
+  for (let k = 0; k < n; k++) { g *= 1 + r[k]; if (g > peak) peak = g; mdd = Math.min(mdd, g / peak - 1); const e = r[k] - rf[k]; ex += e; dn += Math.min(e, 0) ** 2; }
+  const vol = stdev(r) * Math.sqrt(12); let w12 = Infinity;
+  for (let i = 0; i + 12 <= n; i++) { let p = 1; for (let k = i; k < i + 12; k++) p *= 1 + r[k]; w12 = Math.min(w12, p - 1); }
+  return { final: 10000 * g, cagr: Math.pow(g, 12 / n) - 1, vol, mdd, sharpe: (ex / n) * 12 / vol, sortino: (ex / n) * 12 / (Math.sqrt(dn / n) * Math.sqrt(12)), worst12: w12 };
+}
+function calYear(r, months, y) { let p = 1, c = 0; months.forEach((m, i) => { if (m.slice(0, 4) === y) { p *= 1 + r[i]; c++; } }); return c === 12 ? p - 1 : NaN; }
+// portfolio with weights per month (array of [w...]) over asset keys; drift-adjusted turnover
+function portfolio(keys, wOf, idx) {
+  const r = [], tw = []; let prev = null;
+  for (const i of idx) {
+    const w = wOf(i), a = keys.map(k => D.returns[k][i]);
+    if (prev) { const d = prev.w.map((v, j) => v * (1 + prev.a[j])), s = d.reduce((x, y) => x + y, 0); tw.push(0.5 * w.reduce((t, v, j) => t + Math.abs(v - d[j] / s), 0)); }
+    r.push(w.reduce((t, v, j) => t + v * a[j], 0)); prev = { w, a };
+  }
+  return { r, turnover: tw.length ? tw.reduce((x, y) => x + y, 0) / tw.length * 12 : 0 };
+}
+function firstIdx(sig) { return D.months.findIndex((m, i) => D.signals[sig].states.std[i] !== "."); }
+function runModel(sig = "main", variant = "std", hy = "VWEHX", off = "VFISX", win = "full") {
+  if (!D.signals[sig]) sig = "main";
+  const S = D.signals[sig], st = S.states[variant] || S.states.std;
+  let i0 = firstIdx(sig); if (win === "2005") i0 = Math.max(i0, D.months.indexOf("2005-12"));
+  const idx = []; for (let i = i0; i < D.months.length; i++) idx.push(i);
+  const months = idx.map(i => D.months[i]), rf = idx.map(i => D.tbill[i] / 1200), W = D.weights;
+  const strat = portfolio([hy, "VBMFX", off], i => W[st[i]], idx);
+  const B = {
+    strat, static: portfolio([hy, "VBMFX"], () => [0.4, 0.6], idx), hy: portfolio([hy], () => [1], idx), agg: portfolio(["VBMFX"], () => [1], idx)
+  };
+  const out = {};
+  for (const k in B) out[k] = { ...stats(B[k].r, rf), turnover: B[k].turnover, years: Object.fromEntries(YEARS.map(y => [y, calYear(B[k].r, months, y)])), r: B[k].r };
+  const ss = idx.map(i => st[i]); const share = s => ss.filter(x => x === s).length / ss.length;
+  let switches = 0; for (let k = 1; k < ss.length; k++) if (ss[k] !== ss[k - 1]) switches++;
+  // episodes (within window)
+  const eps = []; let cur = null;
+  ss.forEach((s, k) => {
+    if (cur && s !== cur.state) { cur.to = k - 1; eps.push(cur); cur = null; }
+    if (s !== "N" && !cur) cur = { state: s, from: k };
+  });
+  if (cur) { cur.to = ss.length - 1; cur.open = true; eps.push(cur); }
+  const comp = (key, a, b) => { let p = 1; for (let k = a; k <= b; k++) p *= 1 + D.returns[key][idx[k]]; return p - 1; };
+  eps.forEach(e => {
+    e.fromM = months[e.from]; e.toM = months[e.to]; e.n = e.to - e.from + 1; e.hy = comp(hy, e.from, e.to); e.agg = comp("VBMFX", e.from, e.to);
+    e.spread = S.spread[idx[e.from]]; e.pct = S.pct[idx[e.from]];
+    if (e.state === "D" && !e.open) { const a = idx[e.to] + 1, b = a + 11; if (b < D.months.length) { let p = 1; for (let i = a; i <= b; i++) p *= 1 + D.returns[hy][i]; e.after = p - 1; } }
+  });
+  return { sig, variant, hy, off, win, months, out, share: { ON: share("U"), N: share("N"), OFF: share("D") }, switches, states: ss, eps,
+    nowState: st[st.length - 1], nowPct: S.pct[S.pct.length - 1], nowSpread: S.spread[S.spread.length - 1] };
+}
+window.__fi = { run(...a) { const o = runModel(...a); for (const k in o.out) delete o.out[k].r; return o; } };
+
+/* ---------- UI ---------- */
+const KEY = "calc-fi-risk-on-off";
+const DEFAULTS = { sig: "main", var: "std", hy: "VWEHX", off: "VFISX", win: "full", log: true };
+const IDS = ["sig", "var", "hy", "off", "win"];
+function setInputs(o) { IDS.forEach(k => $(k).value = o[k]); $("log").checked = !!o.log; }
+function getInputs() { const o = {}; IDS.forEach(k => o[k] = $(k).value); o.log = $("log").checked; return o; }
+try { const s = JSON.parse(localStorage.getItem(KEY) || "null"); if (s) setInputs({ ...DEFAULTS, ...s }); IDS.forEach(k => { if ($(k).selectedIndex < 0) $(k).value = DEFAULTS[k]; }); } catch (e) {}
+[...IDS, "log"].forEach(id => $(id).addEventListener("input", render));
+$("reset").onclick = () => { setInputs(DEFAULTS); render(); };
+function showError(msg) { $("errs").innerHTML = '<div class="errbox" role="alert">' + msg + "</div>"; $("content").hidden = true; }
+
+function render() {
+  const inp = getInputs();
+  try { localStorage.setItem(KEY, JSON.stringify(inp)); } catch (e) {}
+  if (!D) return;
+  const r = runModel(inp.sig, inp.var, inp.hy, inp.off, inp.win), o = r.out;
+  $("content").hidden = false;
+  const vsS = o.strat.cagr - o.static.cagr;
+  $("lead").textContent = `From ${mlabel(r.months[0])} to ${mlabel(r.months[r.months.length - 1])} the strategy compounded at ${pct(o.strat.cagr, 2)} a year, ${Math.abs(vsS * 100).toFixed(2)} points ${vsS >= 0 ? "more" : "less"} than a static 40/60 ${inp.hy}/VBMFX mix, with a Sharpe ratio of ${o.strat.sharpe.toFixed(2)} vs ${o.static.sharpe.toFixed(2)}. ` +
+    `It was risk-on ${Math.round(r.share.ON * 100)}% and risk-off ${Math.round(r.share.OFF * 100)}% of the time. State for ${mlabel(D.end)}: ${STN[r.nowState]}, set from the ${mlabel(D.months[D.months.length - 2])} month-end spread of ${r.nowSpread.toFixed(2)}% (percentile ${Math.round(r.nowPct)}).`;
+  const cols = [["strat", "Strategy"], ["static", `Static 40/60 ${inp.hy}/VBMFX`], ["hy", `Buy &amp; hold ${inp.hy}`], ["agg", "Buy &amp; hold VBMFX"]];
+  const rows = [["Ending value of $10,000", x => usd(x.final)], ["CAGR", x => pct(x.cagr, 2)], ["Volatility", x => pct(x.vol, 2)], ["Max drawdown", x => pct(x.mdd)],
+    ["Sharpe ratio (vs T-bills)", x => x.sharpe.toFixed(2)], ["Sortino ratio", x => x.sortino.toFixed(2)], ["Worst 12 months", x => pct(x.worst12)],
+    ...YEARS.map(y => [y, x => pct(x.years[y])]), ["Turnover per year", x => pct(x.turnover, 0)]];
+  $("cmp").innerHTML = `<thead><tr><th scope="col"></th>${cols.map(c => `<th scope="col">${c[1]}</th>`).join("")}</tr></thead><tbody>` +
+    rows.map(([k, f]) => `<tr><td>${k}</td>${cols.map((c, j) => `<td${j ? "" : ' class="hi"'}>${f(o[c[0]])}</td>`).join("")}</tr>`).join("") +
+    `<tr><td>Time risk-on / neutral / risk-off</td><td class="hi">${Math.round(r.share.ON * 100)} / ${Math.round(r.share.N * 100)} / ${Math.round(r.share.OFF * 100)}%</td><td>—</td><td>—</td><td>—</td></tr>` +
+    `<tr><td>State switches</td><td class="hi">${r.switches}</td><td>0</td><td>0</td><td>0</td></tr></tbody>`;
+  $("chartTitle").textContent = `Growth of $10,000, ${mlabel(r.months[0])} – ${mlabel(r.months[r.months.length - 1])}`;
+  $("band").innerHTML = r.states.map((s, k) => `<i class="st-${s}" title="${mlabel(r.months[k])}: ${STN[s]}"></i>`).join("");
+  const n = r.months.length, step = n > 300 ? 5 : 2, ys = [];
+  r.months.forEach((m, k) => { if (m.slice(5) === "01" && +m.slice(0, 4) % step === 0 && k > 6 && k < n - 6) ys.push(`<span style="left:${(k / n * 100).toFixed(2)}%">${m.slice(0, 4)}</span>`); });
+  $("bandYrs").innerHTML = ys.join("");
+  $("epSub").textContent = r.eps.length ? `${r.eps.length} episodes in this period. Returns are compounded over the months the state's weights applied. "${inp.hy} 12 months after" is shown for completed risk-off episodes.` : "No risk-on or risk-off episodes in this period.";
+  $("eps").innerHTML = `<thead><tr><th scope="col">State</th><th scope="col">Months held</th><th scope="col">Length</th><th scope="col">Spread / pct at entry</th><th scope="col">${inp.hy} during</th><th scope="col">VBMFX during</th><th scope="col">${inp.hy} 12 months after</th></tr></thead><tbody>` +
+    r.eps.map(e => `<tr><td>${STN[e.state]}</td><td>${mlabel(e.fromM)} – ${e.open ? "now" : mlabel(e.toM)}</td><td>${e.n} mo</td><td>${e.spread.toFixed(2)}% / ${Math.round(e.pct)}</td><td>${pct(e.hy)}</td><td>${pct(e.agg)}</td><td>${e.after == null ? "—" : pct(e.after)}</td></tr>`).join("") + "</tbody>";
+  draw(r, inp);
+}
+const FF = '"Public Sans", system-ui, sans-serif';
+function curve(r) { const o = [10000]; for (const v of r) o.push(o[o.length - 1] * (1 + v)); return o; }
+function draw(r, inp) {
+  if (typeof Chart === "undefined") return;
+  const i0 = D.months.indexOf(r.months[0]); const labels = [i0 > 0 ? D.months[i0 - 1] : r.months[0], ...r.months];
+  const line = css("--line"), muted = css("--muted"), log = inp.log;
+  const opts = { responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: "index", intersect: false },
+    plugins: { legend: { display: true, position: "top", align: "start", labels: { color: css("--ink-2"), boxWidth: 12, boxHeight: 12, font: { family: FF } } },
+      tooltip: { backgroundColor: css("--surface"), titleColor: css("--ink"), bodyColor: css("--ink-2"), borderColor: line, borderWidth: 1, padding: 10, titleFont: { family: FF, weight: "600" }, bodyFont: { family: FF },
+        callbacks: { title: i => mlabel(labels[i[0].dataIndex]), label: c => ` ${c.dataset.label}: ${usd(c.parsed.y)}` } } },
+    scales: { x: { grid: { display: false }, border: { color: line }, ticks: { color: muted, font: { family: FF }, maxRotation: 0, autoSkip: false,
+        callback: (v, i) => { const m = labels[i]; return m && i > 0 && m.slice(5) === "01" && (+m.slice(0, 4)) % (labels.length > 300 ? 5 : 2) === 0 ? m.slice(0, 4) : ""; } } },
+      y: { type: log ? "logarithmic" : "linear", grid: { color: line }, border: { display: false }, ticks: { color: muted, font: { family: FF },
+        callback: v => { if (!log) return usdK(v); const m = v / Math.pow(10, Math.floor(Math.log10(v))); return [1, 2, 5].some(k => Math.abs(m - k) < 1e-9) ? usdK(v) : ""; } } } } };
+  const o = r.out, ds = [
+    { label: "Strategy", data: curve(o.strat.r), borderColor: css("--s1"), backgroundColor: css("--s1"), borderWidth: 2.75, pointRadius: 0, pointHoverRadius: 4 },
+    { label: `Static 40/60`, data: curve(o.static.r), borderColor: css("--s5"), backgroundColor: css("--s5"), borderWidth: 1.75, borderDash: [5, 4], pointRadius: 0, pointHoverRadius: 4 },
+    { label: inp.hy, data: curve(o.hy.r), borderColor: css("--s3"), backgroundColor: css("--s3"), borderWidth: 1.5, pointRadius: 0, pointHoverRadius: 4 },
+    { label: "VBMFX", data: curve(o.agg.r), borderColor: css("--s2"), backgroundColor: css("--s2"), borderWidth: 1.5, pointRadius: 0, pointHoverRadius: 4 }];
+  if (chart1) { chart1.data.labels = labels; chart1.data.datasets = ds; chart1.options = opts; chart1.update(); }
+  else chart1 = new Chart($("c1"), { type: "line", data: { labels, datasets: ds }, options: opts });
+}
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { chart1 && chart1.destroy(); chart1 = null; render(); });
+function notes() {
+  const s = D.sources, sp = D.vfisxSplice, f = D.iceFill;
+  $("notes").textContent = `Sources: ${s.prices}; ${s.tbill}; ${s.baa}; ${s.ice}. ` +
+    `VFISX's first full month is ${mlabel(sp.firstActual)}. Earlier months use a short-Treasury proxy built from ${s.vfisxProxy} (duration ${sp.D}, correlation with VFISX ${sp.corr}, tracking error ${(sp.trackingError * 100).toFixed(2)}%/yr). ` +
+    `ICE OAS month-ends ${mlabel(f.months[0])}–${mlabel(f.months[f.months.length - 1])} are missing from all archives and are estimated as ${f.slope}×Baa spread ${f.intercept < 0 ? "−" : "+"} ${Math.abs(f.intercept)} (r = ${f.r}). ` +
+    `Data runs ${mlabel(D.start)} to ${mlabel(D.end)}; built ${D.built}.`;
+  $("funds").innerHTML = Object.keys(D.names).map(k => `<li><b>${k}</b>: ${D.names[k]}</li>`).join("");
+}
+fetch("data/fi-risk-on-off.json").then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+  .then(d => { D = d; notes(); render(); })
+  .catch(e => showError("Couldn't load the backtest data (data/fi-risk-on-off.json). Try reloading the page. " + (e && e.message ? "(" + e.message + ")" : "")));
+render();
+</script>
+</body>
+</html>
