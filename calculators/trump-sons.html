@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Trump-Sons Board &amp; Advisory Role Backtest</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="shared.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+.errbox{border:1px solid var(--bad);border-radius:10px;padding:14px 16px;background:var(--surface);color:var(--bad);font-size:14px}
+.how p,.how li{margin:0 0 8px;font-size:13.5px;color:var(--ink-2);max-width:80ch}
+.how ul{padding-left:18px;margin:0 0 8px}
+[hidden]{display:none!important}
+.chk{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-2)}
+.chk input{accent-color:var(--accent)}
+.lead{margin:0 0 12px;font-size:15px;color:var(--ink);max-width:76ch}
+.warn{border-left:3px solid var(--s3);padding:8px 12px;margin:0 0 12px;font-size:13.5px;color:var(--ink-2);background:var(--accent-soft);border-radius:0 8px 8px 0}
+.cmp th:first-child{position:static}
+.cmp td:first-child{color:var(--ink-2)}
+.cmp td.hi,.cmp tr.hi td{font-weight:600}
+.cmp td.neg{color:var(--bad)}.cmp td.pos{color:var(--good)}
+.cmp td,.cmp th{white-space:nowrap}
+.disc{border:1px solid var(--line);border-radius:10px;padding:12px 16px;font-size:12.5px;color:var(--muted)}
+.sub{font-size:13px;color:var(--muted);margin:0 0 10px;max-width:80ch}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Trump-Sons Board &amp; Advisory Role Backtest</h1>
+    <p>An equal-weight portfolio of listed companies where Donald Trump Jr. or Eric Trump holds a board, advisory or (for American Bitcoin) executive role, bought once the role became public. Daily data, research backtest.</p>
+  </header>
+  <div class="layout">
+    <aside aria-label="Inputs">
+      <fieldset>
+        <legend>Portfolio</legend>
+        <div class="f full"><label for="uni">Universe</label><div class="in"><select id="uni">
+          <option value="MAIN" selected>MAIN: 7 outside appointments (from Nov 2024)</option>
+          <option value="PLUS_FAMILY">PLUS FAMILY: + DJT, ABTC (from Apr 2022)</option>
+          <option value="PLUS_SPACS">PLUS SPACs: + NWAX, CLBR (III), MKLY</option>
+        </select></div></div>
+        <div class="f full"><label for="mode">Weighting</label><div class="in"><select id="mode">
+          <option value="ew" selected>Equal weight, rebalanced monthly and on changes</option>
+          <option value="bh">Buy &amp; hold from entry</option>
+        </select></div></div>
+        <div class="f full"><label for="conv">Entry price</label><div class="in"><select id="conv">
+          <option value="a" selected>(a) Announcement-day close (main)</option>
+          <option value="b">(b) Next-day open (conservative)</option>
+          <option value="c">(c) Announcement-day open (optimistic)</option>
+        </select></div></div>
+        <div class="f full"><label for="cost">Trading costs</label><div class="in"><select id="cost">
+          <option value="0" selected>None</option>
+          <option value="50">50bp per trade on microcaps</option>
+        </select></div></div>
+        <div class="f full"><label for="alts">ALT5 Sigma (ALTS/AIFC)</label><div class="in"><select id="alts">
+          <option value="exit" selected>Sell Apr 30, 2026 (role end, unverified)</option>
+          <option value="held">Still held</option>
+        </select></div></div>
+        <label class="chk"><input type="checkbox" id="log" checked> Log scale</label>
+      </fieldset>
+      <button type="button" class="reset" id="reset">Reset to defaults</button>
+    </aside>
+    <main aria-live="polite">
+      <div id="errs"></div>
+      <div id="content" hidden>
+        <div style="display:flex;flex-direction:column;gap:20px">
+          <section class="panel">
+            <p class="warn"><b>Small sample.</b> MAIN is 7 names over about 2 years. PLUS FAMILY's first 2½ years (Apr 2022 – Nov 2024) are DJT alone. Results are driven by a few very volatile microcaps; treat every statistic as descriptive.</p>
+            <p class="lead" id="lead"></p>
+            <div class="tbl"><table class="cmp" id="cmp"></table></div>
+          </section>
+          <section class="panel">
+            <h2 id="chartTitle">Growth of $10,000</h2>
+            <div class="chart"><canvas id="c1" role="img" aria-label="Line chart of growth of $10,000 for the portfolio and its benchmarks"></canvas></div>
+          </section>
+          <section class="panel">
+            <h2>All variants for this universe</h2>
+            <p class="sub">Weighting × entry price × costs, with the ALT5 Sigma setting chosen at left. The highlighted row is the one charted.</p>
+            <div class="tbl"><table class="cmp" id="vars"></table></div>
+          </section>
+          <section class="panel">
+            <h2>Per name: returns and event study</h2>
+            <p class="sub">Day 0 is the announcement day (first trading day for SPACs announced before listing). Abnormal return (AR) = stock return − IWM return, same day; CAR sums ARs over the window. "Entry → end" runs to the role end date or the latest close.</p>
+            <div class="tbl"><table class="cmp" id="names"></table></div>
+          </section>
+          <section class="panel">
+            <h2>Event-study averages</h2>
+            <p class="sub">t-statistics are cross-sectional (mean ÷ standard error across names). With 7–10 events they are descriptive only.</p>
+            <div class="tbl"><table class="cmp" id="es"></table></div>
+          </section>
+          <section class="panel">
+            <h2>Pop vs post-announcement drift</h2>
+            <p class="sub">Equal-weight rebalanced, no costs. The first row buys at the close <i>before</i> each announcement, which is impossible in practice (look-ahead); it shows what the announcement-day pop was worth. Entry (a) earns none of the pop by construction, so its result is entirely post-announcement drift.</p>
+            <div class="tbl"><table class="cmp" id="pv"></table></div>
+          </section>
+          <section class="panel">
+            <h2>Contribution by name and leave-one-out</h2>
+            <p class="sub" id="ctSub"></p>
+            <div class="tbl"><table class="cmp" id="ct"></table></div>
+          </section>
+          <section class="panel">
+            <h2>Factor regression</h2>
+            <p class="sub">Daily excess returns on the Fama-French five factors plus momentum (Ken French daily data, which end Sep 30, 2026, so Oct–Nov 2026 is excluded). Newey-West standard errors, 5 lags. Coefficient (t-stat).</p>
+            <div class="tbl"><table class="cmp" id="reg"></table></div>
+          </section>
+          <section class="panel how">
+            <h2>Method</h2>
+            <p><b>Holdings.</b> MAIN: Unusual Machines (UMAC, from Nov 27, 2024), PublicSquare (PSQH, Dec 3, 2024), GrabAGun (held as Colombier Acquisition Corp. II from the Jan 6, 2025 advisor announcement, then PEW after the July 2025 merger), Dominari (DOMH, Feb 11, 2025; one position although both brothers are advisors), Metaplanet (3350.T in Tokyo, Mar 21, 2025, converted to dollars), ALT5 Sigma (ALTS, renamed AIFC, Aug 11, 2025) and Mixed Martial Arts Group (MMA, Sep 9, 2025). PLUS FAMILY adds Trump Media (held as Digital World Acquisition Corp. from Apr 25, 2022, then DJT) and American Bitcoin (held as Gryphon Digital Mining from the May 12, 2025 merger announcement, then ABTC; Eric Trump's role there is executive, not board). PLUS SPACs adds New America Acquisition I (NWAX), Colombier Acquisition Corp. III (CLBR) and McKinley Acquisition (MKLY, from Jul 31, 2026).</p>
+            <p><b>Rules.</b> Equal weight across active holdings, rebalanced to equal whenever a name is added or removed and at every month-end. The buy-and-hold version gives a new name an equal share of the portfolio's current value, funded pro rata from the existing holdings, and never rebalances otherwise. Positions are sold on the role end date; only ALT5 Sigma has one. Returns are daily, close to close, using split- and dividend-adjusted prices.</p>
+            <p><b>Entry prices.</b> (a) the announcement-day close. (b) the next day's open. (c) the announcement-day open. UMAC, PSQH, Colombier II, DOMH, Gryphon, ALTS and MMA were treated as pre-market announcements: each opened with a large gap on heavy volume, and Dominari's 8:30am ET release is documented. For those, (c) buys after the overnight gap, so it does not capture the pop. Metaplanet announced during the Tokyo session (open +2.6%, close +18%), so (c) does capture it. The timing for DWAC and MKLY is unknown, so (c) uses the day-0 open. NWAX and Colombier III announced the roles before listing, so they enter at their first available share trade.</p>
+            <p><b>Costs.</b> The cost run charges 50bp on every dollar traded (entries, exits and rebalancing) in microcaps, defined as a market value under about $300M at entry (approximate, from public reporting): UMAC, PSQH, Colombier II/PEW, DOMH, ALTS, MMA, Gryphon/ABTC and the three SPACs. DJT and Metaplanet are not charged. Real spreads on the smallest names are likely wider.</p>
+            <p><b>Statistics.</b> Sharpe ratios use arithmetic daily excess returns over 3-month T-bills (FRED DTB3). At about 100% volatility the drag from volatility is roughly 50% a year, so a Sharpe near zero can sit alongside an 80% loss. Betas are daily regressions on IWM and on bitcoin.</p>
+          </section>
+          <section class="panel how">
+            <h2>Caveats</h2>
+            <ul>
+              <li><b>Sample size.</b> 7 names over about 2 years in MAIN; 9 in PLUS FAMILY, where Apr 2022 – Nov 2024 is DJT alone. One or two names move the whole result (see leave-one-out).</li>
+              <li><b>UMAC concentration.</b> UMAC was the only holding from its Nov 27, 2024 entry until PSQH was added on Dec 3, so the MAIN portfolio took UMAC's +89% on Nov 29, 2024 in full. That day is MAIN's high point.</li>
+              <li><b>Possible leaks.</b> DOMH rose 91% on Feb 10, 2025, the day before the 8:30am Feb 11 release (the advisory agreement is dated Feb 10). Gryphon and ALTS also ran up in the five days before their announcements (abnormal returns of about +68% and +36%). None of this is tradable on public information.</li>
+              <li><b>PSQH.</b> The NYSE suspended PSQH on Nov 9, 2026 and began delisting proceedings; it now trades on OTC Pink. Prices after that date are OTC quotes.</li>
+              <li><b>ALT5 Sigma exit date is unverified.</b> Eric Trump was removed from the company's leadership page around April 2026 per press reports; no 8-K was found. The "still held" option shows the alternative.</li>
+              <li><b>DWAC event date.</b> The Apr 25, 2022 date is press coverage of an Apr 18, 2022 Florida corporate filing that listed Don Jr. as a TMTG director, so day 0 is not a clean announcement.</li>
+              <li><b>SPACs.</b> SPAC units and warrants are ignored; only common shares are held. NWAX units (Dec 2025 – Jan 2026) and Colombier III units (from Feb 4, 2026) are not in the data, so those names enter when their shares began trading.</li>
+            </ul>
+          </section>
+          <section class="panel">
+            <h2>Data notes</h2>
+            <p class="note" id="notes"></p>
+          </section>
+          <p class="disc">This is a hypothetical research backtest of past prices. It is not a recommendation to buy or sell any security, and past performance does not predict future results. For education only, not investment advice.</p>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const usd = v => (v < 0 ? "-" : "") + "$" + Math.abs(v).toLocaleString("en-US", { maximumFractionDigits: 0 });
+const usdK = v => Math.abs(v) >= 1e6 ? "$" + +(v / 1e6).toFixed(1) + "M" : Math.abs(v) >= 1000 ? "$" + +(v / 1000).toFixed(v >= 1e5 ? 0 : 1) + "k" : "$" + Math.round(v);
+const pct = (v, d = 1) => v == null || isNaN(v) ? "—" : (v * 100).toFixed(d) + "%";
+const spct = (v, d = 1) => v == null || isNaN(v) ? "—" : (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v * 100).toFixed(d) + "%";
+const f2 = v => v == null || isNaN(v) ? "—" : (v < 0 ? "−" : "") + Math.abs(v).toFixed(2);
+const sgn = v => v == null || isNaN(v) ? "" : v < 0 ? ' class="neg"' : v > 0 ? ' class="pos"' : "";
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const dlabel = d => MON[+d.slice(5, 7) - 1] + " " + (+d.slice(8, 10)) + ", " + d.slice(0, 4);
+const UNAME = { MAIN: "MAIN", PLUS_FAMILY: "PLUS FAMILY", PLUS_SPACS: "PLUS SPACs" };
+const UWIN = { MAIN: "main", PLUS_FAMILY: "family", PLUS_SPACS: "family" };
+const CONV = { a: "(a) day-0 close", b: "(b) next-day open", c: "(c) day-0 open" };
+const MODE = { ew: "Equal weight", bh: "Buy & hold" };
+const BENCH = ["SPY", "IWM", "IWC", "EW MSTR/COIN", "BITO", "BTC"];
+let D = null, chart1 = null;
+
+const KEY = "calc-trump-sons";
+const DEFAULTS = { uni: "MAIN", mode: "ew", conv: "a", cost: "0", alts: "exit", log: true };
+const IDS = ["uni", "mode", "conv", "cost", "alts"];
+function setInputs(o) { IDS.forEach(k => $(k).value = o[k]); $("log").checked = !!o.log; }
+function getInputs() { const o = {}; IDS.forEach(k => o[k] = $(k).value); o.log = $("log").checked; return o; }
+try { const s = JSON.parse(localStorage.getItem(KEY) || "null"); if (s) setInputs({ ...DEFAULTS, ...s }); IDS.forEach(k => { if ($(k).selectedIndex < 0) $(k).value = DEFAULTS[k]; }); } catch (e) {}
+[...IDS, "log"].forEach(id => $(id).addEventListener("input", render));
+$("reset").onclick = () => { setInputs(DEFAULTS); render(); };
+function showError(msg) { $("errs").innerHTML = '<div class="errbox" role="alert">' + msg + "</div>"; $("content").hidden = true; }
+const vkey = i => `${i.uni}|${i.mode}|${i.conv}|${i.cost}|${i.alts}`;
+const thead = cols => `<thead><tr>${cols.map(c => `<th scope="col">${c}</th>`).join("")}</tr></thead>`;
+
+function render() {
+  const inp = getInputs();
+  try { localStorage.setItem(KEY, JSON.stringify(inp)); } catch (e) {}
+  if (!D) return;
+  const V = D.variants[vkey(inp)]; if (!V) { showError("That combination isn't in the data file."); return; }
+  $("errs").innerHTML = ""; $("content").hidden = false;
+  const w = UWIN[inp.uni], B = D.bench[w], s = V.stats, dates = D.windows[w].dates;
+  $("lead").textContent = `From ${dlabel(s.start)} to ${dlabel(s.end)}, ${UNAME[inp.uni]} (${MODE[inp.mode].toLowerCase()}, entry ${CONV[inp.conv]}${inp.cost === "50" ? ", 50bp microcap costs" : ""}) returned ${spct(s.total)} in total (${spct(s.cagr)} a year), with a maximum drawdown of ${spct(s.maxdd)}. ` +
+    `Over the same dates SPY returned ${spct(B.SPY.stats.total)} and the Russell 2000 (IWM) ${spct(B.IWM.stats.total)}.`;
+  const cols = [["Portfolio", s], ...BENCH.map(b => [b, B[b].stats])];
+  const rows = [["Ending value of $10,000", x => usd(10000 * (1 + x.total))], ["Total return", x => spct(x.total), 1], ["CAGR", x => spct(x.cagr), 1], ["Volatility", x => pct(x.vol)],
+    ["Max drawdown", x => spct(x.maxdd), 1], ["Sharpe ratio (vs T-bills)", x => f2(x.sharpe)], ["Beta to IWM", x => f2(x.beta_iwm)], ["Beta to bitcoin", x => f2(x.beta_btc)]];
+  $("cmp").innerHTML = thead(["", ...cols.map(c => c[0])]) + "<tbody>" +
+    rows.map(([k, f]) => `<tr><td>${k}</td>${cols.map((c, j) => `<td${j ? "" : ' class="hi"'}>${f(c[1])}</td>`).join("")}</tr>`).join("") + "</tbody>";
+  $("chartTitle").textContent = `Growth of $10,000, ${dlabel(dates[0])} – ${dlabel(dates[dates.length - 1])}`;
+  // variants table
+  let vr = "";
+  for (const m of ["ew", "bh"]) for (const c of ["a", "b", "c"]) for (const k of ["0", "50"]) {
+    const x = D.variants[`${inp.uni}|${m}|${c}|${k}|${inp.alts}`].stats, on = m === inp.mode && c === inp.conv && k === inp.cost;
+    vr += `<tr${on ? ' class="hi"' : ""}><td>${MODE[m]}</td><td>${CONV[c]}</td><td>${k === "0" ? "None" : "50bp"}</td><td>${spct(x.total)}</td><td>${spct(x.cagr)}</td><td>${pct(x.vol)}</td><td>${spct(x.maxdd)}</td><td>${f2(x.sharpe)}</td><td>${f2(x.beta_iwm)}</td><td>${f2(x.beta_btc)}</td></tr>`;
+  }
+  $("vars").innerHTML = thead(["Weighting", "Entry", "Costs", "Total", "CAGR", "Vol", "Max DD", "Sharpe", "β IWM", "β BTC"]) + "<tbody>" + vr + "</tbody>";
+  // contributions + LOO for this universe (entry a, no costs)
+  const names = D.universes[inp.uni];
+  const ct = n => D.contrib.find(r => r.universe === inp.uni && r.name === n && r.mode === inp.mode);
+  const lo = n => D.loo.find(r => r.universe === inp.uni && r.dropped === n);
+  const base = lo("(none)");
+  $("ctSub").textContent = `${UNAME[inp.uni]}, ${MODE[inp.mode].toLowerCase()} for contributions, entry (a), no costs, ALT5 Sigma sold Apr 30, 2026. Contributions add up to the portfolio's total return. Leave-one-out uses equal weight and shows the result with that name removed (base ${spct(base.total)}).` + (inp.uni !== "MAIN" ? " Dropping DJT moves the start to Nov 27, 2024, so that row covers a different period." : "");
+  const sorted = [...names].sort((p, q) => ct(q).contribution - ct(p).contribution);
+  $("ct").innerHTML = thead(["Name", "Contribution", "Total without it", "CAGR without it", "Sharpe without it", "Max DD without it"]) + "<tbody>" +
+    sorted.map(n => { const c = ct(n).contribution, l = lo(n); return `<tr><td>${D.holdings[n].label.replace(/->/g, " → ")}</td><td${sgn(c)}>${spct(c)}</td><td>${spct(l.total)}</td><td>${spct(l.cagr)}</td><td>${f2(l.sharpe)}</td><td>${spct(l.maxdd)}</td></tr>`; }).join("") +
+    `<tr class="hi"><td>Total</td><td>${spct(sorted.reduce((t, n) => t + ct(n).contribution, 0))}</td><td>${spct(base.total)}</td><td>${spct(base.cagr)}</td><td>${f2(base.sharpe)}</td><td>${spct(base.maxdd)}</td></tr></tbody>`;
+  draw(V, B, dates, inp);
+}
+function statics() {
+  const P = D.perName;
+  $("names").innerHTML = thead(["Name", "Universe", "Day 0", "Timing", "Day-0 return", "Gap at open", "Open → close", "AR [−5,−1]", "AR day 0", "CAR 5d", "CAR 20d", "CAR [+1,+20]", "Entry (a) → end", "Entry (b) → end", "Entry (c) → end", "End"]) + "<tbody>" +
+    P.map(r => `<tr><td>${r.label.replace(/->/g, " → ")}</td><td>${UNAME[r.universe]}</td><td>${r.day0}</td><td>${r.timing}</td>` +
+      ["ret_day0", "gap_prevclose_to_open", "intraday_open_to_close", "AR_pre5", "AR_0", "CAR_0_4", "CAR_0_19", "CAR_1_20", "ret_entry_a_to_end", "ret_entry_b_to_end", "ret_entry_c_to_end"].map(k => `<td${sgn(r[k])}>${spct(r[k])}</td>`).join("") +
+      `<td>${r.end}${r.name === "AIFC" ? ` (still held: ${spct(r.ret_entry_a_to_now_if_still_held)})` : ""}</td></tr>`).join("") + "</tbody>";
+  const WN = { AR_pre5: "AR [−5,−1] (before)", AR_0: "AR day 0", CAR_0_4: "CAR 5 days [0,4]", CAR_0_19: "CAR 20 days [0,19]", CAR_1_20: "CAR [+1,+20] (after a close entry)" };
+  $("es").innerHTML = thead(["Group", "Window", "Mean", "Median", "t-stat", "n"]) + "<tbody>" +
+    D.eventSummary.map(r => `<tr><td>${r.group}</td><td>${WN[r.window]}</td><td${sgn(r.mean)}>${spct(r.mean)}</td><td${sgn(r.median)}>${spct(r.median)}</td><td>${f2(r.t_cross)}</td><td>${r.n}</td></tr>`).join("") + "</tbody>";
+  $("pv").innerHTML = thead(["Universe", "Entry", "Total", "CAGR", "Portfolio return on announcement days", "Portfolio return on all other days"]) + "<tbody>" +
+    D.popDrift.map(r => `<tr><td>${UNAME[r.universe]}</td><td>${r.entry}</td><td>${spct(r.total)}</td><td>${spct(r.cagr)}</td><td>${spct(r.ret_on_announcement_days)}</td><td>${spct(r.ret_other_days)}</td></tr>`).join("") + "</tbody>";
+  const F = ["Mkt-RF", "SMB", "HML", "RMW", "CMA", "MOM"];
+  $("reg").innerHTML = thead(["Portfolio", "Dates", "Days", "Alpha / yr (t)", ...F, "R²"]) + "<tbody>" +
+    D.regression.map(r => `<tr><td>${r.portfolio}</td><td>${r.start} – ${r.end}</td><td>${r.n}</td><td>${spct(r.alpha_ann)} (${f2(r.alpha_t)})</td>${F.map(f => `<td>${f2(r["b_" + f])} (${f2(r["t_" + f])})</td>`).join("")}<td>${f2(r.R2)}</td></tr>`).join("") + "</tbody>";
+  $("notes").textContent = `Prices: Yahoo Finance daily split- and dividend-adjusted closes and opens, through ${dlabel(D.end)}. Yahoo carries each SPAC's history under its post-merger ticker: DWAC under DJT (DWAC shares traded separately from Sep 30, 2021; units from Sep 3, 2021), Colombier II under PEW (the CLBR ticker now belongs to Colombier III, whose shares start Mar 27, 2026), Gryphon under ABTC and ALT5 Sigma under AIFC. First trades checked against filings: DJT Mar 26, 2024; UMAC Feb 14, 2024 (IPO); PSQH Jul 20, 2023 (switched from CLBR, Colombier I, at the open). ` +
+    `Splits are adjusted and were checked for jumps: PSQH 1-for-15 (Jul 2026), ABTC 1-for-15 (Jul 2026), Gryphon 1-for-5 at the merger (Sep 2025), Metaplanet 10-for-1 (Mar 28, 2025). Metaplanet is converted to dollars at Yahoo's daily USD/JPY rate; each Tokyo close is matched to the same US date (Tokyo closes before New York opens). It tracks the US OTC line MTPLF within 2 points since entry. Bitcoin: Yahoo BTC-USD. T-bills: FRED DTB3. Factors: Kenneth French data library, daily, through Sep 30, 2026. Role dates come from company releases, SEC filings and press reports. Data built ${D.built}.`;
+}
+const FF = '"Public Sans", system-ui, sans-serif';
+function draw(V, B, dates, inp) {
+  if (typeof Chart === "undefined") return;
+  const line = css("--line"), muted = css("--muted"), log = inp.log;
+  const opts = { responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: "index", intersect: false },
+    plugins: { legend: { display: true, position: "top", align: "start", labels: { color: css("--ink-2"), boxWidth: 12, boxHeight: 12, font: { family: FF } } },
+      tooltip: { backgroundColor: css("--surface"), titleColor: css("--ink"), bodyColor: css("--ink-2"), borderColor: line, borderWidth: 1, padding: 10, titleFont: { family: FF, weight: "600" }, bodyFont: { family: FF },
+        callbacks: { title: i => dlabel(dates[i[0].dataIndex]), label: c => ` ${c.dataset.label}: ${usd(c.parsed.y)}` } } },
+    scales: { x: { grid: { display: false }, border: { color: line }, ticks: { color: muted, font: { family: FF }, maxRotation: 0, autoSkip: false,
+        callback: (v, i) => { const d = dates[i], p = dates[i - 1]; if (!d || !p || d.slice(5, 7) === p.slice(5, 7)) return ""; const m = +d.slice(5, 7); return dates.length > 700 ? (m === 1 ? d.slice(0, 4) : "") : (m === 1 ? d.slice(0, 4) : m % 3 === 1 ? MON[m - 1] : ""); } } },
+      y: { type: log ? "logarithmic" : "linear", grid: { color: line }, border: { display: false }, ticks: { color: muted, font: { family: FF },
+        callback: v => { if (!log) return usdK(v); const m = v / Math.pow(10, Math.floor(Math.log10(v))); return [1, 2, 3, 5].some(k => Math.abs(m - k) < 1e-9) ? usdK(v) : ""; } } } } };
+  const ser = a => a.map(x => x == null ? null : 10000 * x);
+  const BC = { SPY: "--s5", IWM: "--s2", IWC: "--s4", "EW MSTR/COIN": "--s3", BITO: "--muted", BTC: "--accent" };
+  const ds = [{ label: `${UNAME[inp.uni]} portfolio`, data: ser(V.v), borderColor: css("--s1"), backgroundColor: css("--s1"), borderWidth: 2.75, pointRadius: 0, pointHoverRadius: 4 },
+    ...BENCH.map(b => ({ label: b, data: ser(B[b].v), borderColor: css(BC[b]), backgroundColor: css(BC[b]), borderWidth: 1.4, borderDash: ["SPY", "IWM", "IWC"].includes(b) ? [] : [5, 4], pointRadius: 0, pointHoverRadius: 3 }))];
+  if (chart1) { chart1.data.labels = dates; chart1.data.datasets = ds; chart1.options = opts; chart1.update(); }
+  else chart1 = new Chart($("c1"), { type: "line", data: { labels: dates, datasets: ds }, options: opts });
+}
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { chart1 && chart1.destroy(); chart1 = null; render(); });
+fetch("data/trump-sons.json").then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+  .then(d => { D = d; statics(); render(); })
+  .catch(e => showError("Couldn't load the backtest data (data/trump-sons.json). Try reloading the page. " + (e && e.message ? "(" + e.message + ")" : "")));
+render();
+</script>
+</body>
+</html>
