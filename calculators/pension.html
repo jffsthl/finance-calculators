@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Pension Retiree Inflation-Tilt Backtest</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="shared.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+.errbox{border:1px solid var(--bad);border-radius:10px;padding:14px 16px;background:var(--surface);color:var(--bad);font-size:14px}
+.how p,.how li{margin:0 0 8px;font-size:13.5px;color:var(--ink-2);max-width:82ch}
+.how ul{padding-left:18px;margin:0 0 8px}
+.how h3{font-size:14px;margin:14px 0 6px}
+[hidden]{display:none!important}
+.chk{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-2);grid-column:1/-1}
+.chk input{accent-color:var(--accent)}
+.lead{margin:0 0 12px;font-size:15px;color:var(--ink);max-width:80ch}
+.warn{border-left:3px solid var(--s3);padding:8px 12px;margin:0 0 12px;font-size:13.5px;color:var(--ink-2);background:var(--accent-soft);border-radius:0 8px 8px 0}
+.cmp td,.cmp th{white-space:nowrap}
+.cmp tr.hi td{font-weight:600;background:var(--accent-soft)}
+.cmp td.neg{color:var(--bad)}
+.cmp tr.high td:first-child{box-shadow:inset 3px 0 0 var(--s3)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:1100px){.two{grid-template-columns:1fr}}
+.two h3{font-size:13.5px;margin:0 0 4px;font-weight:600}
+.chart.sm{height:300px}
+.disc{border:1px solid var(--line);border-radius:10px;padding:12px 16px;font-size:12.5px;color:var(--muted)}
+.sub{font-size:13px;color:var(--muted);margin:0 0 10px;max-width:82ch}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Pension Retiree Inflation-Tilt Backtest</h1>
+    <p>A married couple living mostly on a fixed nominal pension plus CPI-indexed Social Security. Does tilting their IRA toward TIPS and natural resources protect them from inflation? Every 30-year retirement starting in January 1927–1996, replayed with 2026 dollars and 2026 tax law.</p>
+  </header>
+  <div class="layout">
+    <aside aria-label="Inputs">
+      <fieldset>
+        <legend>Household (2026 dollars)</legend>
+        <div class="f"><label for="pension">Pension / yr (no COLA)</label><div class="in"><span>$</span><input id="pension" type="number" inputmode="decimal" min="0" step="1000"></div></div>
+        <div class="f"><label for="ss">Social Security / yr</label><div class="in"><span>$</span><input id="ss" type="number" inputmode="decimal" min="0" step="1000"></div></div>
+        <div class="f"><label for="w0">Starting IRA balance</label><div class="in"><span>$</span><input id="w0" type="number" inputmode="decimal" min="0" step="50000"></div></div>
+        <div class="f"><label for="save">Year-1 savings rate</label><div class="in"><input id="save" type="number" inputmode="decimal" min="-50" max="90" step="1"><span>%</span></div></div>
+        <p class="hint">Spending is (100% − savings rate) of year-1 after-tax income, then grows with CPI. Married filing jointly, both 65+, Texas.</p>
+      </fieldset>
+      <fieldset>
+        <legend>Allocation</legend>
+        <div class="f full"><label for="alloc">Main mix</label><div class="in"><select id="alloc"></select></div></div>
+        <div class="f full"><label for="cmpA">Compare with</label><div class="in"><select id="cmpA"></select></div></div>
+      </fieldset>
+      <fieldset>
+        <legend>Assumptions</legend>
+        <div class="f full"><label for="tips">Pre-2000 TIPS real yield</label><div class="in"><select id="tips">
+          <option value="tips_R1">R1 (main): 10y nominal − trailing 10y CPI, then Cleveland Fed</option>
+          <option value="tips_R2">R2: constant 2% real</option>
+          <option value="tips_R3">R3: constant 1% real</option>
+          <option value="tips_R4">R4: constant 3% real</option>
+          <option value="tips_R5">R5: R1 clipped to −1% … 5%</option>
+        </select></div></div>
+        <label class="chk"><input type="checkbox" id="hair"> Nat-res haircut: −2%/yr before Oct 2010</label>
+        <div class="f"><label for="from">First start year</label><div class="in"><input id="from" type="number" min="1927" max="1996" step="1"></div></div>
+        <div class="f"><label for="to">Last start year</label><div class="in"><input id="to" type="number" min="1927" max="1996" step="1"></div></div>
+        <p class="hint" id="winHint"></p>
+      </fieldset>
+      <button type="button" class="reset" id="reset">Reset to defaults</button>
+    </aside>
+    <main aria-live="polite">
+      <div id="errs"></div>
+      <div id="content" hidden style="display:flex;flex-direction:column;gap:20px">
+        <section class="stats" id="stats" aria-label="Summary"></section>
+        <section class="panel">
+          <p class="warn"><b>One inflation episode.</b> The high-inflation tercile is essentially the 1966–82 Great Inflation (start years about 1953–1975, overlapping windows), and TIPS before 1997 are synthetic. Treat the inflation results as one stress test, not a statistical estimate.</p>
+          <p class="lead" id="lead"></p>
+          <h2>All six mixes</h2>
+          <p class="sub" id="allSub"></p>
+          <div class="tbl"><table class="cmp" id="all"></table></div>
+        </section>
+        <section class="panel">
+          <h2>Real wealth over the retirement</h2>
+          <p class="sub">Across all windows in range: median, 25th–75th and 10th–90th percentile bands, and the path with the lowest ending wealth. Real 2026 dollars, pre-tax IRA balance.</p>
+          <div class="two">
+            <div><h3 id="fanT1"></h3><div class="chart sm"><canvas id="fan1" role="img" aria-label="Fan chart of real wealth for the main mix"></canvas></div></div>
+            <div id="fan2box"><h3 id="fanT2"></h3><div class="chart sm"><canvas id="fan2" role="img" aria-label="Fan chart of real wealth for the comparison mix"></canvas></div></div>
+          </div>
+        </section>
+        <section class="panel">
+          <h2>Inflation-regime split</h2>
+          <p class="sub" id="tercSub"></p>
+          <div class="chart"><canvas id="terc" role="img" aria-label="Bar chart of ending real wealth by inflation tercile for each mix"></canvas></div>
+          <div class="tbl"><table class="cmp" id="tercT"></table></div>
+        </section>
+        <section class="panel">
+          <h2>Every start year</h2>
+          <p class="sub">Withdrawals are the same for every mix: whether the household needs to draw from the IRA depends only on the CPI path (pension, Social Security, taxes and spending). Rows marked orange are high-inflation-tercile windows. Wealth in $k, real 2026 dollars.</p>
+          <div class="tbl"><table class="cmp" id="years"></table></div>
+        </section>
+        <section class="panel how">
+          <h2>Method</h2>
+          <ul>
+            <li><b>Windows.</b> Rolling 30-year retirements starting each January, 1927–1996 (70 windows; the 1996 window ends Dec 2025). Annual steps: all cash flows at the start of each year, then that calendar year's portfolio return (monthly compounding inside the year, expense ratios deducted monthly, rebalanced to target each year).</li>
+            <li><b>Household.</b> Pension fixed in nominal dollars (no COLA). Social Security grows with the window's CPI. Year-1 spending = (1 − savings rate) × year-1 after-tax income, then grows with CPI. With the defaults that is $50,000 + $40,000 − $4,616 tax = $85,384 after tax, and spending of $81,115.</li>
+            <li><b>Surplus and shortfall.</b> A surplus is added to the portfolio (treated as a taxable contribution in the same mix). A shortfall is taken as a grossed-up traditional-IRA withdrawal, solved by bisection so pension + SS + W − tax = spending. "Depleted" = the balance can't cover that year's gross withdrawal; ending wealth is then 0. RMDs are ignored.</li>
+            <li><b>Taxes.</b> 2026 married-filing-jointly brackets (10–37% at $24,800 / $100,800 / $211,400 / $403,550 / $512,450 / $768,700, IRS Rev. Proc. 2025-32) and the $32,200 standard deduction plus 2 × $1,650 for 65+, all scaled by the window's CPI. The OBBBA $6,000 senior deduction is excluded. No state tax (Texas). Social Security taxation uses the IRC §86 $32,000 / $44,000 thresholds held fixed in nominal dollars, as in law, so more SS becomes taxable over time.</li>
+            <li><b>Expense ratios.</b> Stock 0.03%, Agg 0.03%, TIPS 0.05%, nat res 0.40%.</li>
+            <li><b>Statistics.</b> Success = never short of a gross withdrawal. Ending and path-minimum wealth are real (2026 dollars), pre-tax. Percentiles use linear interpolation. Inflation terciles split the windows in range by 30-year cumulative CPI.</li>
+            <li><b>This page reruns the research engine in your browser</b> (the same code as the study's sim.py, ported to JavaScript) on annual returns exported by tools/build-pension-data.py. With the default inputs it reproduces the research results to the dollar.</li>
+          </ul>
+          <h2 style="margin-top:14px">Data, splices and proxies</h2>
+          <ul>
+            <li><b>CPI:</b> BLS CPI-U (FRED CPIAUCNS). October 2025 was never published (government shutdown), so it is interpolated between September and November.</li>
+            <li><b>US stock:</b> CRSP value-weighted total market (Ken French Mkt-RF + RF) from July 1926; October 2026 spliced from VTSMX.</li>
+            <li><b>Agg:</b> synthetic until 1986: 70% Treasury par bond at the 10-year yield + 30% corporate par bond at the average of Moody's AAA and BAA less 0.20%/yr default loss, both 7-year maturity. VBMFX from January 1987. Against VBMFX the proxy has annual correlation 0.94 but ran about 0.3–0.4%/yr above it.</li>
+            <li><b>TIPS:</b> synthetic until June 2000 (a 10-year real par bond repriced at the assumed real yield, plus CPI), VIPSX from July 2000. R1 uses 10-year nominal − trailing 10-year CPI through 1981, then the Cleveland Fed 10-year real rate. R2–R4 use a constant real yield; R5 clips R1 to −1%…5%.</li>
+            <li><b>Natural resources:</b> cap-weighted Ken French industry proxy (agriculture, mines, coal, oil, gold from 1963, steel) until September 2010, then GNR (S&amp;P Global Natural Resources). The proxy is US-only and energy-heavy; it beat GNR by about 3.4%/yr in their 2010–26 overlap. The haircut toggle subtracts 2%/yr before October 2010.</li>
+          </ul>
+          <h2 style="margin-top:14px">Caveats</h2>
+          <ul>
+            <li><b>The Great Inflation is a single episode.</b> High-inflation windows overlap heavily and all live through 1966–82, so inflation-regime results are one scenario.</li>
+            <li><b>TIPS before 1997 are synthetic.</b> TIPS didn't exist; the result depends on the assumed real yield. Under R3 (constant 1%) the TIPS-only mix C is no better than B. R1 produces −3% real yields in 1946–55 and a +7% spike in 1981–82.</li>
+            <li><b>The nat-res proxy is optimistic</b> versus a global natural-resources fund (US-only, energy-heavy before 2010). Use the haircut toggle to stress it.</li>
+            <li><b>The Agg proxy is about 0.3–0.4%/yr optimistic</b> versus VBMFX, which flatters B, D and F slightly.</li>
+            <li>Every window uses 2026 tax law and dollar amounts; there is no historical tax law. Ending wealth is pre-tax. RMDs are ignored.</li>
+          </ul>
+        </section>
+        <p class="disc">Research backtest for discussion, not a forecast or advice. Past sequences of returns and inflation won't repeat. Source study: pension-bt (November 2026).</p>
+      </div>
+    </main>
+  </div>
+</div>
+<script>
+// ENGINE START (mirrors /workspace/pension-bt/sim.py; tested against its CSVs by tools/test-pension-engine.js)
+const PX = (() => {
+  const BRK = [0, 24800, 100800, 211400, 403550, 512450, 768700], RATES = [.10, .12, .22, .24, .32, .35, .37];
+  const STD = 32200 + 2 * 1650, SS_B1 = 32000, SS_B2 = 44000, YEARS = 30;
+  const ALLOC = { A: { stock: 1 }, B: { stock: .6, agg: .4 }, C: { stock: .6, tips: .4 }, D: { stock: .6, agg: .3, natres: .1 },
+    E: { stock: .6, tips: .2, agg: .1, natres: .1 }, F: { stock: .6, agg: .2, natres: .2 } };
+  const ALABEL = { A: "100 stock", B: "60/40 Agg", C: "60/40 TIPS", D: "60/30 Agg/10 NR", E: "60/20 TIPS/10 Agg/10 NR", F: "60/20 Agg/20 NR" };
+  function tax(ord, ss, I, thr) {
+    const b1 = SS_B1 * thr, b2 = SS_B2 * thr, pi = ord + 0.5 * ss;
+    const tss = pi <= b1 ? 0 : pi <= b2 ? Math.min(0.5 * ss, 0.5 * (pi - b1)) : Math.min(0.85 * ss, 0.85 * (pi - b2) + Math.min(0.5 * ss, 0.5 * (b2 - b1)));
+    const ti = Math.max(0, ord + tss - STD * I);
+    let t = 0;
+    for (let i = 0; i < 7; i++) { const lo = BRK[i] * I, hi = i < 6 ? BRK[i + 1] * I : Infinity; t += Math.min(Math.max(ti - lo, 0), hi - lo) * RATES[i]; }
+    return t;
+  }
+  function quantile(sorted, p) { const n = sorted.length; if (!n) return NaN; const h = (n - 1) * p, lo = Math.floor(h), hi = Math.ceil(h); return sorted[lo] + (sorted[hi] - sorted[lo]) * (h - lo); }
+  const pctl = (arr, p) => quantile([...arr].sort((a, b) => a - b), p);
+  // D: pension.json; o: {pension, ss, eshare, tips:'tips_R1'.., hair:bool, from, to, idxThr}
+  function simulate(D, o) {
+    const y0 = D.years[0], starts = []; for (let y = o.from; y <= o.to; y++) starts.push(y);
+    const cpiAt = y => D.cpi_dec[y - D.cpi_dec_from];                         // Dec CPI of year y
+    const R = { stock: D.ret.stock, agg: D.ret.agg, tips: D.ret[o.tips], natres: D.ret[o.hair ? "natres_hair" : "natres"] };
+    const win = starts.map(s => {
+      const I = []; for (let k = 0; k <= YEARS; k++) I.push(cpiAt(s - 1 + k) / cpiAt(s - 1));
+      const flow = [], W = [];
+      const net00 = o.pension + o.ss - tax(o.pension, o.ss, 1, 1);
+      for (let k = 0; k < YEARS; k++) {
+        const Ik = I[k], thr = o.idxThr ? Ik : 1, ss = o.ss * Ik, bt = tax(o.pension, ss, Ik, thr), net0 = o.pension + ss - bt;
+        const exp = o.eshare * net00 * Ik, need = exp - net0;
+        if (need <= 0) { flow.push(-need); W.push(0); continue; }
+        let lo = 0, hi = need * 2.5 + 1;
+        for (let it = 0; it < 70; it++) { const mid = (lo + hi) / 2, got = mid - (tax(o.pension + mid, ss, Ik, thr) - bt); if (got < need) lo = mid; else hi = mid; }
+        flow.push(-hi); W.push(hi);
+      }
+      const fwi = flow.findIndex(f => f < 0);
+      const realWd = flow.reduce((t, f, k) => t + (f < 0 ? -f / I[k] : 0), 0);
+      return { start: s, I, flow, cum: I[YEARS], fw: fwi < 0 ? 0 : fwi + 1, realWd };
+    });
+    // terciles on 30-yr cumulative CPI (pd.qcut 3)
+    const cs = win.map(w => w.cum).sort((a, b) => a - b), q1 = quantile(cs, 1 / 3), q2 = quantile(cs, 2 / 3);
+    win.forEach(w => w.terc = w.cum <= q1 ? "low" : w.cum <= q2 ? "mid" : "high");
+    const res = {};
+    for (const a in ALLOC) {
+      const wt = ALLOC[a];
+      const runs = win.map(w => {
+        let P = o.W0, alive = true, dep = 0, grow = 1; const path = [P];
+        for (let k = 0; k < YEARS; k++) {
+          const yi = w.start + k - y0;
+          let rp = 0; for (const key in wt) rp += wt[key] * R[key][yi];
+          grow *= 1 + rp;
+          const P2 = P + w.flow[k];
+          if (alive && P2 < 0) { dep = k + 1; alive = false; }
+          P = alive ? P2 * (1 + rp) : 0;
+          path.push(P / w.I[k + 1]);
+        }
+        return { success: alive, dep, end: path[YEARS], min: Math.min(...path), path, cagr: Math.pow(grow / w.cum, 1 / YEARS) - 1 };
+      });
+      const ends = runs.map(r => r.end), order = ends.map((e, i) => i).sort((i, j) => ends[i] - ends[j]);
+      const sub = t => runs.filter((r, i) => win[i].terc === t);
+      const st = t => { const s = sub(t), e = s.map(r => r.end); return { n: s.length, success: s.filter(r => r.success).length / s.length, median: pctl(e, .5), p10: pctl(e, .1) }; };
+      res[a] = { runs, success: runs.filter(r => r.success).length / runs.length, median: pctl(ends, .5), p10: pctl(ends, .1), worst: ends[order[0]], worstStart: win[order[0]].start,
+        medianMin: pctl(runs.map(r => r.min), .5), worstMin: Math.min(...runs.map(r => r.min)), worst5: order.slice(0, 5).map(i => win[i].start),
+        failed: runs.map((r, i) => r.success ? null : win[i].start).filter(x => x != null), high: st("high"), low: st("low"), mid: st("mid") };
+    }
+    return { win, res, q1, q2 };
+  }
+  return { simulate, pctl, ALLOC, ALABEL, tax, YEARS };
+})();
+// ENGINE END
+const $ = id => document.getElementById(id);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const k0 = v => v == null || isNaN(v) ? "—" : Math.round(v / 1000).toLocaleString("en-US");
+const usdk = v => v == null || isNaN(v) ? "—" : "$" + k0(v) + "k";
+const usd = v => "$" + Math.round(v).toLocaleString("en-US");
+const pct = (v, d = 1) => v == null || isNaN(v) ? "—" : (v * 100).toFixed(d) + "%";
+const thead = cols => `<thead><tr>${cols.map(c => `<th scope="col">${c}</th>`).join("")}</tr></thead>`;
+const MIXES = Object.keys(PX.ALLOC);
+const COL = { A: "--s5", B: "--s1", C: "--s2", D: "--s3", E: "--s4", F: "--bad" };
+const KEY = "calc-pension";
+const DEFAULTS = { pension: 50000, ss: 40000, w0: 1000000, save: 5, alloc: "E", cmpA: "B", tips: "tips_R1", hair: false, from: 1927, to: 1996 };
+const NUM = ["pension", "ss", "w0", "save", "from", "to"], SEL = ["alloc", "cmpA", "tips"];
+$("alloc").innerHTML = MIXES.map(a => `<option value="${a}">${a}) ${PX.ALABEL[a]}</option>`).join("");
+$("cmpA").innerHTML = '<option value="">None</option>' + $("alloc").innerHTML;
+function setInputs(o) { [...NUM, ...SEL].forEach(k => $(k).value = o[k]); $("hair").checked = !!o.hair; }
+function getInputs() { const o = {}; NUM.forEach(k => o[k] = parseFloat($(k).value)); SEL.forEach(k => o[k] = $(k).value); o.hair = $("hair").checked; return o; }
+setInputs(DEFAULTS);
+try { const s = JSON.parse(localStorage.getItem(KEY) || "null"); if (s) setInputs({ ...DEFAULTS, ...s }); SEL.forEach(k => { if ($(k).selectedIndex < 0) $(k).value = DEFAULTS[k]; }); } catch (e) {}
+[...NUM, ...SEL, "hair"].forEach(id => $(id).addEventListener("input", render));
+$("reset").onclick = () => { setInputs(DEFAULTS); render(); };
+let D = null; const charts = {};
+function showError(msg) { $("errs").innerHTML = '<div class="errbox" role="alert">' + msg + "</div>"; $("content").hidden = true; }
+function render() {
+  const inp = getInputs();
+  try { localStorage.setItem(KEY, JSON.stringify(inp)); } catch (e) {}
+  if (!D) return;
+  const lo = Math.max(1927, Math.min(1996, Math.round(inp.from) || 1927)), hi = Math.max(1927, Math.min(1996, Math.round(inp.to) || 1996));
+  const bad = [];
+  if (!(inp.pension >= 0)) bad.push("Pension must be zero or more."); if (!(inp.ss >= 0)) bad.push("Social Security must be zero or more.");
+  if (!(inp.w0 >= 0)) bad.push("Starting balance must be zero or more."); if (!(inp.save > -50 && inp.save < 90)) bad.push("Savings rate must be between −50% and 90%.");
+  if (hi - lo < 2) bad.push("Pick a start-year range of at least 3 years between 1927 and 1996.");
+  if (bad.length) { showError(bad.join(" ")); return; }
+  $("errs").innerHTML = ""; $("content").hidden = false;
+  const R = PX.simulate(D, { pension: inp.pension, ss: inp.ss, eshare: 1 - inp.save / 100, tips: inp.tips, hair: inp.hair, from: lo, to: hi, W0: inp.w0 });
+  const n = R.win.length, a = inp.alloc, b = inp.cmpA && inp.cmpA !== a ? inp.cmpA : null, A = R.res[a], B = b ? R.res[b] : null;
+  $("winHint").textContent = `${n} windows: January ${lo} – January ${hi} starts (last one ends December ${hi + 29}).`;
+  const fws = R.win.map(w => w.fw).filter(x => x > 0), never = n - fws.length;
+  const fwMed = fws.length ? PX.pctl(fws, .5) : null, fwMin = fws.length ? Math.min(...fws) : null, fwMax = fws.length ? Math.max(...fws) : null;
+  const stat = (k, f, key, extra = "") => `<div class="stat"><span class="k">${k}</span><span class="v">${f(A[key])}</span><span class="d">${b ? `${b}) ${f(B[key])}` : ""}${extra}</span></div>`;
+  $("stats").innerHTML = [
+    stat(`Success rate · ${a}`, v => pct(v, v === 1 ? 0 : 1), "success", ` · ${n} windows`),
+    stat(`Median ending real · ${a}`, usdk, "median"),
+    stat(`10th pct ending real · ${a}`, usdk, "p10"),
+    `<div class="stat"><span class="k">Worst ending real · ${a}</span><span class="v">${usdk(A.worst)}</span><span class="d">${A.worstStart} start${b ? ` · ${b}) ${usdk(B.worst)} (${B.worstStart})` : ""}</span></div>`,
+    stat(`Median path minimum · ${a}`, usdk, "medianMin"),
+    stat(`Worst path minimum · ${a}`, usdk, "worstMin"),
+    `<div class="stat"><span class="k">Withdrawals begin</span><span class="v">${fwMed == null ? "Never" : "Year " + (+fwMed.toFixed(1))}</span><span class="d">${fwMed == null ? "Income covers spending in every window" : `median; range year ${fwMin}–${fwMax}${never ? `; never in ${never} windows` : ""}`}</span></div>`,
+    `<div class="stat"><span class="k">Year-1 spending</span><span class="v">${usd((1 - inp.save / 100) * (inp.pension + inp.ss - PX.tax(inp.pension, inp.ss, 1, 1)))}</span><span class="d">after-tax income ${usd(inp.pension + inp.ss - PX.tax(inp.pension, inp.ss, 1, 1))}</span></div>`
+  ].join("");
+  const hiN = A.high.n;
+  $("lead").innerHTML = `Across ${n} retirements starting ${lo}–${hi}, <b>${a}) ${PX.ALABEL[a]}</b> succeeded in ${pct(A.success, A.success === 1 ? 0 : 1)} of windows and ended with a median of <b>${usdk(A.median)}</b> in real 2026 dollars (worst ${usdk(A.worst)}, ${A.worstStart} start)` +
+    (B ? `, against ${usdk(B.median)} (worst ${usdk(B.worst)}, ${B.worstStart}) for <b>${b}) ${PX.ALABEL[b]}</b>. In the ${hiN} high-inflation windows the median was ${usdk(A.high.median)} vs ${usdk(B.high.median)} and the 10th percentile ${usdk(A.high.p10)} vs ${usdk(B.high.p10)}.` : ".");
+  $("allSub").textContent = `Starting balance ${usd(inp.w0)}, ${n} windows. Wealth in $k, real 2026 dollars. High-inflation tercile: ${R.win.filter(w => w.terc === "high").length} windows with 30-year CPI above ${((Math.pow(R.q2, 1 / 30) - 1) * 100).toFixed(2)}%/yr; low tercile: ${R.win.filter(w => w.terc === "low").length} windows at or below ${((Math.pow(R.q1, 1 / 30) - 1) * 100).toFixed(2)}%/yr.`;
+  $("all").innerHTML = thead(["Mix", "Success", "Median end", "P10 end", "Worst end (yr)", "Median path-min", "Worst path-min", "High-infl median / P10", "Low-infl median", "5 worst start yrs", "Failed starts"]) + "<tbody>" +
+    MIXES.map(m => { const x = R.res[m]; return `<tr${m === a || m === b ? ' class="hi"' : ""}><td>${m}) ${PX.ALABEL[m]}</td><td${x.success < 1 ? ' class="neg"' : ""}>${pct(x.success, x.success === 1 ? 0 : 1)}</td><td>${k0(x.median)}</td><td>${k0(x.p10)}</td><td>${k0(x.worst)} (${x.worstStart})</td><td>${k0(x.medianMin)}</td><td>${k0(x.worstMin)}</td><td>${k0(x.high.median)} / ${k0(x.high.p10)}</td><td>${k0(x.low.median)}</td><td>${x.worst5.join(" ")}</td><td>${x.failed.length ? x.failed.join(" ") : "—"}</td></tr>`; }).join("") + "</tbody>";
+  // terciles
+  const yrs = t => R.win.filter(w => w.terc === t).map(w => w.start), rng = t => { const y = yrs(t); return y.length ? `${Math.min(...y)}–${Math.max(...y)}` : "—"; };
+  const ann = c => ((Math.pow(c, 1 / 30) - 1) * 100).toFixed(2);
+  const tr = t => { const c = R.win.filter(w => w.terc === t).map(w => w.cum); return c.length ? `${ann(Math.min(...c))}–${ann(Math.max(...c))}%/yr` : ""; };
+  $("tercSub").textContent = `Windows split into thirds by 30-year cumulative CPI. Low: ${yrs("low").length} windows (${tr("low")}); mid: ${yrs("mid").length} (${tr("mid")}); high: ${yrs("high").length} (${tr("high")}, start years within ${rng("high")}). Bars show median ending real wealth; the marker is the high-inflation 10th percentile.`;
+  $("tercT").innerHTML = thead(["Mix", "Low-infl success", "Low-infl median", "Low-infl P10", "High-infl success", "High-infl median", "High-infl P10"]) + "<tbody>" +
+    MIXES.map(m => { const x = R.res[m]; return `<tr${m === a || m === b ? ' class="hi"' : ""}><td>${m}) ${PX.ALABEL[m]}</td><td>${pct(x.low.success, x.low.success === 1 ? 0 : 1)}</td><td>${k0(x.low.median)}</td><td>${k0(x.low.p10)}</td><td>${pct(x.high.success, x.high.success === 1 ? 0 : 1)}</td><td>${k0(x.high.median)}</td><td>${k0(x.high.p10)}</td></tr>`; }).join("") + "</tbody>";
+  // per year
+  const cols = ["Start", "30-yr CPI", "Tercile", "1st withdrawal yr", "Real withdrawals", `${a} end`, `${a} min`, `${a} real CAGR`, `${a} depleted`];
+  if (b) cols.push(`${b} end`, `${b} min`, `${b} real CAGR`, `${b} depleted`);
+  $("years").innerHTML = thead(cols) + "<tbody>" + R.win.map((w, i) => {
+    const x = A.runs[i], y = B && B.runs[i];
+    const cells = r => `<td>${k0(r.end)}</td><td>${k0(r.min)}</td><td>${pct(r.cagr, 2)}</td><td${r.success ? "" : ' class="neg"'}>${r.success ? "—" : "Year " + r.dep}</td>`;
+    return `<tr class="${w.terc}"><td>${w.start}</td><td>${ann(w.cum)}%/yr</td><td>${w.terc}</td><td>${w.fw || "never"}</td><td>${k0(w.realWd)}</td>${cells(x)}${y ? cells(y) : ""}</tr>`;
+  }).join("") + "</tbody>";
+  draw(R, a, b);
+}
+const FF = '"Public Sans", system-ui, sans-serif';
+function baseOpts(ytitle) {
+  const line = css("--line"), muted = css("--muted");
+  return { responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: "index", intersect: false },
+    plugins: { legend: { position: "top", align: "start", labels: { color: css("--ink-2"), boxWidth: 12, boxHeight: 12, font: { family: FF }, filter: i => !i.text.startsWith("_") } },
+      tooltip: { backgroundColor: css("--surface"), titleColor: css("--ink"), bodyColor: css("--ink-2"), borderColor: line, borderWidth: 1, padding: 10, titleFont: { family: FF, weight: "600" }, bodyFont: { family: FF },
+        filter: i => !i.dataset.label.startsWith("_"), callbacks: { label: c => ` ${c.dataset.label}: ${usdk(c.parsed.y)}` } } },
+    scales: { x: { grid: { display: false }, border: { color: line }, ticks: { color: muted, font: { family: FF }, maxRotation: 0 }, title: { display: !!ytitle, text: ytitle, color: muted, font: { family: FF } } },
+      y: { grid: { color: line }, border: { display: false }, beginAtZero: true, ticks: { color: muted, font: { family: FF }, callback: v => usdk(v) } } } };
+}
+function hexA(c, al) { if (c.startsWith("#") && c.length === 7) { const n = parseInt(c.slice(1), 16); return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${al})`; } return c; }
+function fan(id, R, m, ymax) {
+  if (typeof Chart === "undefined") return;
+  const runs = R.res[m].runs, x = [...Array(PX.YEARS + 1).keys()];
+  const q = p => x.map(k => PX.pctl(runs.map(r => r.path[k]), p));
+  const wi = runs.map(r => r.end).indexOf(R.res[m].worst), c = css(COL[m]);
+  const ds = [
+    { label: "_p90", data: q(.9), borderWidth: 0, pointRadius: 0, fill: false },
+    { label: "10th–90th pct", data: q(.1), borderWidth: 0, pointRadius: 0, fill: "-1", backgroundColor: hexA(c, .16) },
+    { label: "_p75", data: q(.75), borderWidth: 0, pointRadius: 0, fill: false },
+    { label: "25th–75th pct", data: q(.25), borderWidth: 0, pointRadius: 0, fill: "-1", backgroundColor: hexA(c, .32) },
+    { label: "Median", data: q(.5), borderColor: c, backgroundColor: c, borderWidth: 2.5, pointRadius: 0 },
+    { label: `Worst (${R.win[wi].start} start)`, data: runs[wi].path, borderColor: css("--ink-2"), backgroundColor: css("--ink-2"), borderDash: [5, 4], borderWidth: 1.4, pointRadius: 0 },
+  ];
+  const o = baseOpts("Year of retirement");
+  o.plugins.tooltip.callbacks.title = i => "Year " + i[0].label;
+  if (ymax) o.scales.y.max = ymax;
+  if (charts[id]) charts[id].destroy();
+  charts[id] = new Chart($(id), { type: "line", data: { labels: x, datasets: ds }, options: o });
+}
+function draw(R, a, b) {
+  $("fanT1").textContent = `${a}) ${PX.ALABEL[a]} · success ${pct(R.res[a].success, 0)}`;
+  const top = Math.max(...[a, b].filter(Boolean).map(m => { const runs = R.res[m].runs; return Math.max(...[...Array(PX.YEARS + 1).keys()].map(k => PX.pctl(runs.map(r => r.path[k]), .9)), ...runs.map(r => r.end === R.res[m].worst ? Math.max(...r.path) : 0)); }));
+  const step = Math.pow(10, Math.floor(Math.log10(top))) / 2, ymax = Math.ceil(top / step) * step;
+  fan("fan1", R, a, b ? ymax : null);
+  $("fan2box").hidden = !b;
+  if (b) { $("fanT2").textContent = `${b}) ${PX.ALABEL[b]} · success ${pct(R.res[b].success, 0)}`; fan("fan2", R, b, ymax); }
+  if (typeof Chart === "undefined") return;
+  const o = baseOpts("");
+  o.plugins.tooltip.callbacks.title = i => `${i[0].label}) ${PX.ALABEL[i[0].label]}`;
+  const ds = [
+    { type: "line", label: "High-infl 10th pct", data: MIXES.map(m => R.res[m].high.p10), showLine: false, pointStyle: "triangle", rotation: 180, pointRadius: 7, borderColor: css("--ink"), backgroundColor: css("--ink") },
+    { label: "Low-inflation median", data: MIXES.map(m => R.res[m].low.median), backgroundColor: css("--s1") },
+    { label: "Mid-inflation median", data: MIXES.map(m => R.res[m].mid.median), backgroundColor: css("--muted") },
+    { label: "High-inflation median", data: MIXES.map(m => R.res[m].high.median), backgroundColor: css("--s3") },
+  ];
+  if (charts.terc) charts.terc.destroy();
+  charts.terc = new Chart($("terc"), { type: "bar", data: { labels: MIXES, datasets: ds }, options: o });
+}
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", render);
+if (typeof Chart !== "undefined") { Chart.defaults.font.family = FF; }
+fetch("data/pension.json").then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+  .then(j => { D = j; render(); })
+  .catch(e => showError("Couldn't load the backtest data (" + e.message + "). Reload the page to try again."));
+</script>
+</body>
+</html>

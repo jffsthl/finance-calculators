@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Rule of 72</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="shared.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+[hidden]{display:none!important}
+.chk{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-2);grid-column:1/-1}
+.chk input{accent-color:var(--accent)}
+.errbox{border:1px solid var(--bad);border-radius:10px;padding:14px 16px;background:var(--surface);color:var(--bad);font-size:14px}
+.cmp td.best{font-weight:600;color:var(--good)}
+.how p,.how li{margin:0 0 8px;font-size:13.5px;color:var(--ink-2);max-width:80ch}
+.how ul{padding-left:18px;margin:0}
+.lead{margin:0;font-size:15px;max-width:76ch}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Rule of 72</h1>
+    <p>How long money takes to double at a given annual return, or what return doubles it in a given number of years. The quick rule next to the exact answer, with its error.</p>
+  </header>
+  <div class="layout">
+    <aside aria-label="Inputs">
+      <fieldset>
+        <legend>Solve for</legend>
+        <div class="seg" role="group" aria-label="Direction">
+          <button type="button" id="dirY" aria-pressed="true">Years to double</button>
+          <button type="button" id="dirR" aria-pressed="false">Required rate</button>
+        </div>
+        <div class="f full" id="fRate"><label for="rate">Annual return (compounded yearly)</label><div class="in"><input id="rate" type="number" inputmode="decimal" step="0.25" min="0.01" max="200"><span>%</span></div></div>
+        <div class="f full" id="fYears" hidden><label for="years">Years to double</label><div class="in"><input id="years" type="number" inputmode="decimal" step="0.5" min="0.25" max="500"><span>yrs</span></div></div>
+      </fieldset>
+      <fieldset>
+        <legend>Compare rules</legend>
+        <label class="chk"><input type="checkbox" id="r70"> Rule of 70</label>
+        <label class="chk"><input type="checkbox" id="r693"> Rule of 69.3 (exact for continuous compounding)</label>
+        <p class="hint">The rule estimate is <i>N</i> ÷ rate (in percent). The exact answer for annual compounding is ln 2 ÷ ln(1 + r).</p>
+      </fieldset>
+      <button type="button" class="reset" id="reset">Reset to defaults</button>
+    </aside>
+    <main aria-live="polite">
+      <div id="errs"></div>
+      <div id="content" style="display:flex;flex-direction:column;gap:20px">
+        <section class="stats" id="stats" aria-label="Summary"></section>
+        <section class="panel"><p class="lead" id="lead"></p></section>
+        <section class="panel">
+          <h2>Across rates</h2>
+          <p class="sub">Years to double at each annual return. Error = rule estimate − exact (positive means the rule overstates the time). The closest rule in each row is in green.</p>
+          <div class="tbl"><table class="cmp" id="tbl"></table></div>
+        </section>
+        <section class="panel">
+          <h2>Rule error by rate</h2>
+          <p class="sub">Estimate − exact, in years. The Rule of 72 is closest from about 5% to 25% and almost exact near 8%. The Rule of 70 is closer below about 5%. The Rule of 69.3 runs about 0.35 years short at every rate, because it is exact only for continuous compounding.</p>
+          <div class="chart"><canvas id="c1" role="img" aria-label="Line chart of each rule's error in years across annual returns from 1% to 25%"></canvas></div>
+        </section>
+        <section class="panel how">
+          <h2>How it works</h2>
+          <ul>
+            <li><b>Years to double:</b> exact <i>t</i> = ln 2 ÷ ln(1 + r) with r as a decimal. Rule of <i>N</i>: <i>t</i> ≈ <i>N</i> ÷ (r × 100).</li>
+            <li><b>Required rate:</b> exact r = 2<sup>1/t</sup> − 1. Rule of <i>N</i>: r ≈ <i>N</i> ÷ t percent.</li>
+            <li>69.3 ≈ 100 × ln 2, so it is exact for continuous compounding and slightly low for yearly compounding. 72 is used because it has many divisors and happens to be most accurate around 6–10%.</li>
+            <li>Returns are before taxes, fees and inflation. To double purchasing power, use the real (after-inflation) return.</li>
+          </ul>
+        </section>
+      </div>
+    </main>
+  </div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const KEY = "calc-rule-of-72";
+const DEFAULTS = { dir: "years", rate: 8, years: 10, r70: true, r693: true };
+let S = { ...DEFAULTS };
+try { S = { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) || "{}") }; } catch (e) {}
+const exactYears = r => Math.log(2) / Math.log(1 + r / 100);
+const exactRate = t => (Math.pow(2, 1 / t) - 1) * 100;
+const yr = v => isFinite(v) ? v.toFixed(2) : "—";
+const sgn = v => (v = Math.round(v * 100) / 100, v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(2);
+function setInputs() { $("rate").value = S.rate; $("years").value = S.years; $("r70").checked = S.r70; $("r693").checked = S.r693;
+  $("dirY").setAttribute("aria-pressed", S.dir === "years"); $("dirR").setAttribute("aria-pressed", S.dir === "rate"); $("fRate").hidden = S.dir !== "years"; $("fYears").hidden = S.dir !== "rate"; }
+function read() { S.rate = parseFloat($("rate").value); S.years = parseFloat($("years").value); S.r70 = $("r70").checked; S.r693 = $("r693").checked; }
+["rate", "years", "r70", "r693"].forEach(id => $(id).addEventListener("input", () => { read(); render(); }));
+$("dirY").onclick = () => { S.dir = "years"; setInputs(); render(); };
+$("dirR").onclick = () => { S.dir = "rate"; setInputs(); render(); };
+$("reset").onclick = () => { S = { ...DEFAULTS }; setInputs(); render(); };
+const rules = () => [72, ...(S.r70 ? [70] : []), ...(S.r693 ? [69.3] : [])];
+const stat = (k, v, d) => `<div class="stat"><span class="k">${k}</span><span class="v">${v}</span><span class="d">${d}</span></div>`;
+let chart = null;
+function render() {
+  try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {}
+  const R = rules();
+  if (S.dir === "years") {
+    if (!(S.rate > 0 && S.rate <= 200)) { $("errs").innerHTML = '<div class="errbox" role="alert">Enter an annual return above 0% and up to 200%.</div>'; $("content").hidden = true; return; }
+    const ex = exactYears(S.rate);
+    $("stats").innerHTML = stat("Exact years to double", yr(ex), `ln 2 ÷ ln(1 + ${S.rate}%)`) +
+      R.map(N => { const e = N / S.rate, d = e - ex; return stat(`Rule of ${N}`, yr(e), `${N} ÷ ${S.rate} · error ${sgn(d)} yrs (${sgn(d / ex * 100)}%)`); }).join("");
+    $("lead").innerHTML = `At <b>${S.rate}%</b> a year, money doubles in <b>${yr(ex)} years</b>. The Rule of 72 says ${yr(72 / S.rate)} years, ${Math.abs(72 / S.rate - ex) < 0.005 ? "spot on" : `${Math.abs(72 / S.rate - ex).toFixed(2)} years ${72 / S.rate > ex ? "too long" : "too short"}`}.`;
+  } else {
+    if (!(S.years >= 0.25 && S.years <= 500)) { $("errs").innerHTML = '<div class="errbox" role="alert">Enter a doubling time of at least 0.25 years and up to 500 years.</div>'; $("content").hidden = true; return; }
+    const ex = exactRate(S.years);
+    $("stats").innerHTML = stat("Exact required return", ex.toFixed(2) + "%", `2^(1/${S.years}) − 1`) +
+      R.map(N => { const e = N / S.years, d = e - ex; return stat(`Rule of ${N}`, e.toFixed(2) + "%", `${N} ÷ ${S.years} · error ${sgn(d)} pts (${sgn(d / ex * 100)}%)`); }).join("");
+    $("lead").innerHTML = `To double in <b>${S.years} years</b> you need <b>${ex.toFixed(2)}%</b> a year. The Rule of 72 says ${(72 / S.years).toFixed(2)}%.`;
+  }
+  $("errs").innerHTML = ""; $("content").hidden = false;
+  const rates = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20, 25];
+  if (S.dir === "years" && !rates.includes(S.rate)) rates.push(S.rate), rates.sort((a, b) => a - b);
+  $("tbl").innerHTML = `<thead><tr><th>Return</th><th>Exact years</th>${R.map(N => `<th>Rule of ${N}</th><th>Error</th>`).join("")}</tr></thead><tbody>` +
+    rates.map(r => { const ex = exactYears(r), es = R.map(N => N / r), best = es.reduce((b, e, i) => Math.abs(e - ex) < Math.abs(es[b] - ex) ? i : b, 0);
+      return `<tr${S.dir === "years" && r === S.rate ? ' class="mark"' : ""}><td>${r}%</td><td>${yr(ex)}</td>${es.map((e, i) => `<td${i === best ? ' class="best"' : ""}>${yr(e)}</td><td>${sgn(e - ex)}</td>`).join("")}</tr>`; }).join("") + "</tbody>";
+  if (typeof Chart === "undefined") return;
+  const xs = []; for (let r = 1; r <= 25; r += 0.5) xs.push(r);
+  const CL = { 72: css("--s1"), 70: css("--s3"), 69.3: css("--s2") }, line = css("--line"), muted = css("--muted"), FF = '"Public Sans", system-ui, sans-serif';
+  const ds = R.map(N => ({ label: `Rule of ${N}`, data: xs.map(r => N / r - exactYears(r)), borderColor: CL[N], backgroundColor: CL[N], borderWidth: 2, pointRadius: 0 }));
+  const opts = { responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: "index", intersect: false },
+    plugins: { legend: { position: "top", align: "start", labels: { color: css("--ink-2"), boxWidth: 12, boxHeight: 12, font: { family: FF } } },
+      tooltip: { backgroundColor: css("--surface"), titleColor: css("--ink"), bodyColor: css("--ink-2"), borderColor: line, borderWidth: 1, padding: 10, callbacks: { title: i => i[0].label + "% return", label: c => ` ${c.dataset.label}: ${sgn(c.parsed.y)} yrs` } } },
+    scales: { x: { grid: { display: false }, border: { color: line }, ticks: { color: muted, maxRotation: 0, autoSkip: false, callback: (v, i) => xs[i] % 5 === 0 || xs[i] === 1 ? xs[i] + "%" : "" } },
+      y: { grid: { color: line }, border: { display: false }, ticks: { color: muted, callback: v => sgn(v) } } } };
+  if (chart) chart.destroy();
+  chart = new Chart($("c1"), { type: "line", data: { labels: xs, datasets: ds }, options: opts });
+}
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", render);
+setInputs(); render();
+</script>
+</body>
+</html>

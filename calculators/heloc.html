@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>HELOC Payoff Planner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="shared.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{--s-principal:#2a78d6;--s-interest:#eb6834;--s-balance:#4a3aa7;--s-extra:#1baf7a;--bad-soft:#fbe9e7}
+@media (prefers-color-scheme: dark){:root{--s-principal:#3987e5;--s-interest:#d95926;--s-balance:#9085e9;--s-extra:#199e70;--bad-soft:#3a1f1d}}
+[hidden]{display:none!important}
+.errbox{border:1px solid var(--bad);border-radius:10px;padding:14px 16px;background:var(--surface);color:var(--bad);font-size:14px}
+.chk{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-2);grid-column:1/-1}
+.chk input{accent-color:var(--accent)}
+.lumps{grid-column:1/-1;display:flex;flex-direction:column;gap:8px}
+.lump{display:grid;grid-template-columns:1fr 1fr 32px;gap:8px;align-items:end}
+.lump button,.add{border:1px solid var(--line);background:transparent;color:var(--ink-2);border-radius:7px;height:40px;cursor:pointer;font:500 13px "Public Sans",system-ui,sans-serif}
+.add{grid-column:1/-1}
+.lump button:hover,.add:hover{border-color:var(--accent);color:var(--ink)}
+.cmp td,.cmp th{white-space:nowrap}
+.cmp td.good{color:var(--good);font-weight:600}
+.shock{border-left:3px solid var(--bad);background:var(--bad-soft);padding:10px 14px;border-radius:0 8px 8px 0;font-size:14px;margin:0}
+.shock.ok{border-left-color:var(--good);background:var(--accent-soft)}
+.segsm{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden;margin-top:10px}
+.segsm button{border:0;background:var(--field);color:var(--ink-2);font:500 13px "Public Sans",system-ui,sans-serif;padding:8px 14px;cursor:pointer}
+.segsm button[aria-pressed="true"]{background:var(--accent);color:var(--surface)}
+tr.phase td{border-top:2px solid var(--ink-2)}
+.how li{font-size:13.5px;color:var(--ink-2);margin:0 0 6px;max-width:80ch}
+.how ul{padding-left:18px;margin:8px 0 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>HELOC Payoff Planner</h1>
+    <p>Pay down a home equity line: see the payment jump when the draw period ends, how a variable rate moves your payoff, and what extra payments and lump sums save.</p>
+  </header>
+  <div class="layout">
+    <aside aria-label="Inputs">
+      <fieldset>
+        <legend>Your line today</legend>
+        <div class="f"><label for="bal">Current balance</label><div class="in"><span>$</span><input id="bal" type="number" inputmode="decimal" min="0" step="1000"></div></div>
+        <div class="f"><label for="limit">Credit limit</label><div class="in"><span>$</span><input id="limit" type="number" inputmode="decimal" min="0" step="5000"></div></div>
+        <div class="f"><label for="prime">Prime rate</label><div class="in"><input id="prime" type="number" inputmode="decimal" min="0" max="25" step="0.25"><span>%</span></div></div>
+        <div class="f"><label for="margin">Your margin</label><div class="in"><input id="margin" type="number" inputmode="decimal" min="-5" max="10" step="0.125"><span>%</span></div></div>
+        <p class="hint" id="rateHint"></p>
+        <div class="f"><label for="floor">Rate floor</label><div class="in"><input id="floor" type="number" inputmode="decimal" min="0" max="25" step="0.25"><span>%</span></div></div>
+        <div class="f"><label for="cap">Lifetime cap</label><div class="in"><input id="cap" type="number" inputmode="decimal" min="0" max="30" step="0.25"><span>%</span></div></div>
+        <div class="f full"><label for="start">First payment</label><div class="in"><input id="start" type="month"></div></div>
+      </fieldset>
+      <fieldset>
+        <legend>Rate path</legend>
+        <div class="f full"><label for="path">Future prime rate</label><div class="in"><select id="path">
+          <option value="flat">Stays where it is</option>
+          <option value="shock">One-time shock</option>
+          <option value="steps">Custom path by year</option>
+        </select></div></div>
+        <div class="f" data-p="shock"><label for="shockPP">Change</label><div class="in"><input id="shockPP" type="number" inputmode="decimal" step="0.25" min="-10" max="10"><span>pts</span></div></div>
+        <div class="f" data-p="shock"><label for="shockM">Starting month</label><div class="in"><input id="shockM" type="number" inputmode="numeric" min="1" max="600" step="1"><span>mo</span></div></div>
+        <div class="f full" data-p="steps"><label for="steps">Prime by plan year (comma separated)</label><div class="in"><input id="steps" type="text" spellcheck="false" placeholder="7, 7.5, 8, 7.5"></div></div>
+        <p class="hint" data-p="steps">Year 1, year 2, … The last value holds after that.</p>
+      </fieldset>
+      <fieldset>
+        <legend>Terms</legend>
+        <div class="f"><label for="drawM">Draw period left</label><div class="in"><input id="drawM" type="number" inputmode="numeric" min="0" max="360" step="1"><span>mo</span></div></div>
+        <div class="f"><label for="repayY">Repayment period</label><div class="in"><input id="repayY" type="number" inputmode="numeric" min="1" max="30" step="1"><span>yrs</span></div></div>
+        <div class="seg" role="group" aria-label="Minimum payment during draw">
+          <button type="button" id="bIO" aria-pressed="true">Interest-only draw</button>
+          <button type="button" id="bPI" aria-pressed="false">P&amp;I during draw</button>
+        </div>
+        <p class="hint" id="drawHint"></p>
+      </fieldset>
+      <fieldset>
+        <legend>Payments</legend>
+        <div class="f full"><label for="pay">Monthly payment you make</label><div class="in"><span>$</span><input id="pay" type="number" inputmode="decimal" min="0" step="25"><span>/mo</span></div></div>
+        <p class="hint">0 = the minimum. You always pay at least the minimum due.</p>
+        <div class="f full"><label for="extra">Extra each month (extra plan)</label><div class="in"><span>$</span><input id="extra" type="number" inputmode="decimal" min="0" step="25"><span>/mo</span></div></div>
+        <div class="f full" style="margin-bottom:-4px"><label>Lump-sum prepayments (extra plan)</label></div>
+        <div class="lumps" id="lumps"></div>
+        <button type="button" class="add" id="addLump">+ Add a lump sum</button>
+      </fieldset>
+      <button type="button" class="reset" id="reset">Reset to defaults</button>
+    </aside>
+    <main aria-live="polite">
+      <div id="errs"></div>
+      <div id="content" style="display:flex;flex-direction:column;gap:20px">
+        <section class="stats" id="stats" aria-label="Summary"></section>
+        <p class="shock" id="shock"></p>
+        <section class="panel">
+          <h2>Current plan vs extra-payment plan</h2>
+          <p class="sub" id="cmpSub"></p>
+          <div class="tbl"><table class="cmp" id="cmp"></table></div>
+        </section>
+        <section class="panel">
+          <h2>Balance</h2>
+          <p class="sub">Remaining balance for both plans. The dashed line marks the end of the draw period.</p>
+          <div class="chart"><canvas id="c1" role="img" aria-label="Line chart of HELOC balance for the current and extra-payment plans"></canvas></div>
+        </section>
+        <section class="panel">
+          <h2>Monthly payment</h2>
+          <p class="sub">What you pay each month. The step at the dashed line is the payment shock when interest-only (or draw-period) payments end.</p>
+          <div class="chart"><canvas id="c2" role="img" aria-label="Line chart of monthly payment for both plans"></canvas></div>
+        </section>
+        <section class="panel">
+          <details id="tblWrap" open>
+            <summary>Amortization schedule</summary>
+            <div class="segsm" role="group" aria-label="Schedule options">
+              <button type="button" id="tCur" aria-pressed="true">Current plan</button>
+              <button type="button" id="tExt" aria-pressed="false">Extra plan</button>
+            </div>
+            <div class="segsm" role="group" aria-label="Schedule detail" style="margin-left:8px">
+              <button type="button" id="tYr" aria-pressed="true">Yearly</button>
+              <button type="button" id="tMo" aria-pressed="false">Monthly</button>
+            </div>
+            <div class="tbl"><table id="tbl"></table></div>
+          </details>
+        </section>
+        <section class="panel how">
+          <h2>How it works</h2>
+          <ul>
+            <li><b>Rate.</b> Prime + your margin, limited by the floor and lifetime cap, set each month from the rate path. Interest is balance × rate ÷ 12 each month (lenders usually accrue daily, so real statements differ by a few dollars).</li>
+            <li><b>Minimum payment.</b> Interest-only draw: the month's interest. P&amp;I draw: the payment that would pay off the balance over the draw months left plus the repayment period. Repayment: the payment that pays off the balance over the repayment months left. Both are recalculated every month at that month's rate, so a rate change moves the payment right away.</li>
+            <li><b>Your plans.</b> Current plan = the larger of your monthly payment and the minimum. Extra plan = the current plan's payment rule plus your extra each month and the lump sums (applied in the month shown, after that month's payment). No new draws are assumed.</li>
+            <li><b>Payment shock</b> compares the minimum due in the last draw-period month with the first repayment month.</li>
+          </ul>
+        </section>
+        <p class="note">Estimates only. Your lender's statement, rounding, fees, daily-accrual method and any fixed-rate locks will change the numbers.</p>
+      </div>
+    </main>
+  </div>
+</div>
+<script>
+// HELOC ENGINE START
+const HE = (() => {
+  const amort = (bal, r, n) => n <= 0 ? bal * (1 + r) : r === 0 ? bal / n : bal * r / (1 - Math.pow(1 + r, -n));
+  function primeAt(o, m) {  // m = 1-based month
+    if (o.path === "shock") return o.prime + (m >= o.shockM ? o.shockPP : 0);
+    if (o.path === "steps" && o.steps.length) return o.steps[Math.min(o.steps.length, Math.ceil(m / 12)) - 1];
+    return o.prime;
+  }
+  const rateAt = (o, m) => Math.min(o.cap > 0 ? o.cap : Infinity, Math.max(o.floor, primeAt(o, m) + o.margin));
+  // plan: {extra: monthly extra $, lumps: {month: amount}}
+  function run(o, plan) {
+    const N = o.drawM + o.repayM, rows = [];
+    let bal = o.bal, tInt = 0, tPaid = 0;
+    for (let m = 1; m <= N && bal > 0.005; m++) {
+      const apr = rateAt(o, m), r = apr / 100 / 12, interest = bal * r, inDraw = m <= o.drawM;
+      const due = inDraw ? (o.io ? interest : amort(bal, r, N - m + 1)) : amort(bal, r, N - m + 1);
+      let pay = Math.max(due, o.pay) + plan.extra;
+      pay = Math.min(pay, bal + interest);
+      bal = bal + interest - pay;
+      let lump = Math.min(plan.lumps[m] || 0, Math.max(bal, 0)); bal -= lump;
+      if (bal < 0.005) bal = 0;
+      tInt += interest; tPaid += pay + lump;
+      rows.push({ m, apr, inDraw, due, pay, lump, interest, principal: pay - interest + lump, bal });
+    }
+    return { rows, months: rows.length, interest: tInt, paid: tPaid, left: bal };
+  }
+  return { run, rateAt, amort };
+})();
+// HELOC ENGINE END
+const $ = id => document.getElementById(id);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const usd = v => (v < 0 ? "−" : "") + "$" + Math.abs(v).toLocaleString("en-US", { maximumFractionDigits: 0 });
+const usd2 = v => (v < 0 ? "−" : "") + "$" + Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const usdK = v => Math.abs(v) >= 1e6 ? "$" + +(v / 1e6).toFixed(1) + "M" : Math.abs(v) >= 1000 ? "$" + +(v / 1000).toFixed(0) + "k" : "$" + Math.round(v);
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const nextMonth = () => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + 1); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"); };
+const KEY = "calc-heloc";
+const DEFAULTS = { bal: 60000, limit: 100000, prime: 7, margin: 0.5, floor: 0, cap: 18, start: nextMonth(), path: "flat", shockPP: 2, shockM: 13, steps: "7, 7.5, 8, 7.5",
+  drawM: 36, repayY: 20, io: true, pay: 0, extra: 300, lumps: [{ m: 12, amt: 5000 }] };
+const NUM = ["bal", "limit", "prime", "margin", "floor", "cap", "shockPP", "shockM", "drawM", "repayY", "pay", "extra"], TXT = ["start", "path", "steps"];
+let S = JSON.parse(JSON.stringify(DEFAULTS)), view = { plan: "cur", gran: "yr" };
+try { const s = JSON.parse(localStorage.getItem(KEY) || "null"); if (s) S = { ...S, ...s }; } catch (e) {}
+function lumpRows() {
+  $("lumps").innerHTML = S.lumps.map((l, i) => `<div class="lump"><div class="f"><label for="lm${i}">Month #</label><div class="in"><input id="lm${i}" data-i="${i}" data-k="m" type="number" inputmode="numeric" min="1" step="1" value="${l.m}"></div></div>` +
+    `<div class="f"><label for="la${i}">Amount</label><div class="in"><span>$</span><input id="la${i}" data-i="${i}" data-k="amt" type="number" inputmode="decimal" min="0" step="500" value="${l.amt}"></div></div>` +
+    `<button type="button" data-del="${i}" aria-label="Remove lump sum ${i + 1}">×</button></div>`).join("");
+}
+function setInputs() {
+  NUM.forEach(k => $(k).value = S[k]); TXT.forEach(k => $(k).value = S[k]);
+  $("bIO").setAttribute("aria-pressed", S.io); $("bPI").setAttribute("aria-pressed", !S.io);
+  document.querySelectorAll("[data-p]").forEach(e => e.hidden = e.dataset.p !== S.path);
+  lumpRows();
+}
+function read() { NUM.forEach(k => S[k] = parseFloat($(k).value)); TXT.forEach(k => S[k] = $(k).value); }
+NUM.concat(TXT).forEach(k => $(k).addEventListener("input", () => { read(); document.querySelectorAll("[data-p]").forEach(e => e.hidden = e.dataset.p !== S.path); render(); }));
+$("lumps").addEventListener("input", e => { const t = e.target; if (t.dataset.i == null) return; S.lumps[+t.dataset.i][t.dataset.k] = parseFloat(t.value); render(); });
+$("lumps").addEventListener("click", e => { const i = e.target.dataset.del; if (i == null) return; S.lumps.splice(+i, 1); lumpRows(); render(); });
+$("addLump").onclick = () => { S.lumps.push({ m: (S.lumps.length ? Math.max(...S.lumps.map(l => l.m || 0)) : 0) + 12, amt: 5000 }); lumpRows(); render(); };
+$("bIO").onclick = () => { S.io = true; setInputs(); render(); };
+$("bPI").onclick = () => { S.io = false; setInputs(); render(); };
+$("reset").onclick = () => { S = JSON.parse(JSON.stringify(DEFAULTS)); setInputs(); render(); };
+const tg = (a, b, key, val) => { $(a).onclick = () => { view[key] = val[0]; $(a).setAttribute("aria-pressed", true); $(b).setAttribute("aria-pressed", false); render(); }; };
+tg("tCur", "tExt", "plan", ["cur"]); tg("tExt", "tCur", "plan", ["ext"]); tg("tYr", "tMo", "gran", ["yr"]); tg("tMo", "tYr", "gran", ["mo"]);
+function opts() {
+  const steps = String(S.steps || "").split(/[,\s]+/).filter(Boolean).map(Number);
+  return { bal: S.bal, limit: S.limit, prime: S.prime, margin: S.margin, floor: S.floor || 0, cap: S.cap || 0, path: S.path, shockPP: S.shockPP, shockM: Math.round(S.shockM), steps,
+    drawM: Math.round(S.drawM), repayM: Math.round(S.repayY) * 12, io: S.io, pay: S.pay || 0 };
+}
+const stat = (k, v, d) => `<div class="stat"><span class="k">${k}</span><span class="v">${v}</span><span class="d">${d}</span></div>`;
+function label(m) { const [y, mo] = S.start.split("-").map(Number); const i = (mo - 1) + (m - 1); return MON[i % 12] + " " + (y + Math.floor(i / 12)); }
+const dur = n => { const y = Math.floor(n / 12), m = n % 12; return (y ? y + " yr" + (y > 1 ? "s" : "") : "") + (y && m ? " " : "") + (m || !y ? m + " mo" : ""); };
+let c1, c2;
+function render() {
+  try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {}
+  const o = opts(), errs = [];
+  if (!(o.bal > 0)) errs.push("Enter a balance above $0.");
+  if (!(o.limit >= o.bal)) errs.push("The credit limit should be at least the balance.");
+  if (!(o.prime >= 0) || !isFinite(o.margin)) errs.push("Enter a prime rate and margin.");
+  if (!(o.drawM >= 0) || !(o.repayM >= 12)) errs.push("Draw months left must be 0 or more and the repayment period at least 1 year.");
+  if (!/^\d{4}-\d{2}$/.test(S.start || "")) errs.push("Pick a first payment month.");
+  if (o.path === "shock" && !(o.shockM >= 1 && isFinite(o.shockPP))) errs.push("Enter the shock size and the month it starts.");
+  if (o.path === "steps" && (!o.steps.length || o.steps.some(x => !(x >= 0)))) errs.push("Enter the prime path as numbers separated by commas, e.g. 7, 7.5, 8.");
+  if (!(o.pay >= 0) || !(S.extra >= 0)) errs.push("Payments can't be negative.");
+  if (S.lumps.some(l => !(l.m >= 1) || !(l.amt >= 0))) errs.push("Each lump sum needs a month number of 1 or more and an amount of $0 or more.");
+  if (errs.length) { $("errs").innerHTML = `<div class="errbox" role="alert">${errs.join(" ")}</div>`; $("content").hidden = true; return; }
+  $("errs").innerHTML = ""; $("content").hidden = false;
+  const lumps = {}; S.lumps.forEach(l => { const m = Math.round(l.m); lumps[m] = (lumps[m] || 0) + l.amt; });
+  const cur = HE.run(o, { extra: 0, lumps: {} }), ext = HE.run(o, { extra: S.extra || 0, lumps });
+  const r1 = HE.rateAt(o, 1);
+  $("rateHint").textContent = `Rate now: ${r1.toFixed(2)}% (prime ${o.prime}% + ${o.margin}%). ${((o.bal / o.limit) * 100).toFixed(0)}% of the line used; ${usd(o.limit - o.bal)} available during the draw.`;
+  $("drawHint").textContent = o.drawM ? `Draw ends after the ${label(o.drawM)} payment; repayment runs ${S.repayY} years to ${label(o.drawM + o.repayM)}.` : `You're already in repayment, which ends ${label(o.repayM)}.`;
+  // payment shock (minimum due)
+  const last = cur.rows[o.drawM - 1], first = cur.rows[o.drawM];
+  if (o.drawM > 0 && last && first) {
+    const d = first.due - last.due, pp = first.pay - last.pay;
+    $("shock").className = "shock" + (d <= 0.5 ? " ok" : "");
+    if (Math.abs(d) <= 0.5) $("shock").innerHTML = `<b>No payment shock at draw end (${label(o.drawM + 1)}):</b> with P&amp;I during the draw the minimum due stays at ${usd2(first.due)}.`; else
+    $("shock").innerHTML = `<b>Payment shock at draw end (${label(o.drawM + 1)}):</b> the minimum due goes from ${usd2(last.due)} to ${usd2(first.due)}, ` +
+      `${d >= 0 ? "up" : "down"} ${usd2(Math.abs(d))} a month (${last.due > 0 ? (d >= 0 ? "+" : "−") + Math.abs(d / last.due * 100).toFixed(0) + "%" : "—"}).` +
+      (Math.abs(pp - d) > 0.5 ? ` On your current plan the payment you make goes from ${usd2(last.pay)} to ${usd2(first.pay)}.` : "");
+    $("shock").hidden = false;
+  } else if (o.drawM > 0) { $("shock").className = "shock ok"; $("shock").innerHTML = `<b>No payment shock:</b> the current plan pays the line off before the draw period ends (${label(o.drawM)}).`; $("shock").hidden = false; }
+  else $("shock").hidden = true;
+  const savedI = cur.interest - ext.interest, savedM = cur.months - ext.months;
+  $("stats").innerHTML = [
+    stat("Payoff · current plan", label(cur.months), `${dur(cur.months)} · ${cur.left > 0.5 ? "not paid off" : "paid off"}`),
+    stat("Total interest · current", usd(cur.interest), `${usd(cur.paid)} paid in all`),
+    stat("Payoff · extra plan", label(ext.months), `${dur(ext.months)} · ${savedM > 0 ? dur(savedM) + " sooner" : "no sooner"}`),
+    stat("Interest saved", usd(savedI), `extra plan pays ${usd(ext.interest)} interest`),
+  ].join("");
+  $("cmpSub").textContent = `Current plan: the larger of ${o.pay ? usd(o.pay) + "/mo" : "the minimum"} and the minimum due. Extra plan: the same plus ${usd(S.extra || 0)}/mo` + (S.lumps.length ? ` and ${S.lumps.filter(l => l.amt > 0).map(l => `${usd(l.amt)} in month ${Math.round(l.m)} (${label(Math.round(l.m))})`).join(", ")}.` : ".");
+  const row = (k, a, b, f, good) => `<tr><td>${k}</td><td>${f(a)}</td><td>${f(b)}</td><td${good ? ' class="good"' : ""}>${good ? good : ""}</td></tr>`;
+  const fp = r => r.rows[0] ? usd2(r.rows[0].pay) : "—", pAt = (r, m) => r.rows[m - 1] ? usd2(r.rows[m - 1].pay) : "paid off";
+  $("cmp").innerHTML = `<thead><tr><th></th><th>Current plan</th><th>Extra plan</th><th>Difference</th></tr></thead><tbody>` +
+    row("Payoff date", cur, ext, r => label(r.months), savedM > 0 ? dur(savedM) + " sooner" : "—") +
+    row("Months to payoff", cur, ext, r => r.months, savedM > 0 ? savedM + " months saved" : "—") +
+    row("Total interest", cur, ext, r => usd(r.interest), savedI > 0.5 ? usd(savedI) + " saved" : "—") +
+    row("Total paid", cur, ext, r => usd(r.paid), "") +
+    row("First payment", cur, ext, fp, "") +
+    (o.drawM ? row(`Payment in ${label(o.drawM + 1)} (repayment starts)`, cur, ext, r => pAt(r, o.drawM + 1), "") : "") +
+    row("Balance at draw end", cur, ext, r => o.drawM ? usd((r.rows[o.drawM - 1] || { bal: 0 }).bal) : "—", "") + "</tbody>";
+  draw(o, cur, ext);
+  table(view.plan === "cur" ? cur : ext, o);
+}
+const vline = { id: "vline", afterDatasetsDraw(ch, _a, op) { if (op.index == null) return; const x = ch.scales.x.getPixelForValue(op.index), { top, bottom } = ch.chartArea, c = ch.ctx;
+  c.save(); c.strokeStyle = op.color; c.setLineDash([4, 4]); c.beginPath(); c.moveTo(x, top); c.lineTo(x, bottom); c.stroke(); c.setLineDash([]); c.fillStyle = op.color; c.font = '600 12px "Public Sans", system-ui, sans-serif';
+  const w = c.measureText(op.label).width; c.fillText(op.label, x + 6 + w > ch.chartArea.right ? x - 6 - w : x + 6, top + 12); c.restore(); } };
+const FF = '"Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif';
+function draw(o, cur, ext) {
+  if (typeof Chart === "undefined") return;
+  const N = cur.months, labels = Array.from({ length: N + 1 }, (_, i) => i ? label(i) : "Now");
+  const line = css("--line"), muted = css("--muted"), ink2 = css("--ink-2");
+  const base = () => ({ responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: "index", intersect: false },
+    plugins: { legend: { position: "top", align: "start", labels: { color: ink2, boxWidth: 12, boxHeight: 12, font: { family: FF, size: 12.5 } } },
+      tooltip: { backgroundColor: css("--surface"), titleColor: css("--ink"), bodyColor: ink2, borderColor: line, borderWidth: 1, padding: 10, callbacks: { label: c => ` ${c.dataset.label}: ${c.parsed.y == null ? "paid off" : usd(c.parsed.y)}` } },
+      vline: { index: o.drawM > 0 && o.drawM < N ? o.drawM : null, label: "Draw ends", color: ink2 } },
+    scales: { x: { grid: { display: false }, border: { color: line }, ticks: { color: muted, maxRotation: 0, autoSkip: false, callback: (v, i) => i % 12 === 0 && i ? labels[i].slice(4) : "" } },
+      y: { grid: { color: line }, border: { display: false }, beginAtZero: true, ticks: { color: muted, callback: v => usdK(v), maxTicksLimit: 6 } } } });
+  const pad = (r, f) => labels.map((_, i) => i === 0 ? (f === "bal" ? o.bal : null) : r.rows[i - 1] ? r.rows[i - 1][f] : (f === "bal" ? 0 : null));
+  const ds1 = [{ label: "Current plan", data: pad(cur, "bal"), borderColor: css("--s-balance"), backgroundColor: css("--s-balance"), borderWidth: 2.25, pointRadius: 0 },
+    { label: "Extra plan", data: pad(ext, "bal"), borderColor: css("--s-extra"), backgroundColor: css("--s-extra"), borderWidth: 2.25, pointRadius: 0 }];
+  const ds2 = [{ label: "Current plan", data: pad(cur, "pay"), borderColor: css("--s-balance"), backgroundColor: css("--s-balance"), borderWidth: 2, pointRadius: 0, stepped: true },
+    { label: "Extra plan", data: pad(ext, "pay"), borderColor: css("--s-extra"), backgroundColor: css("--s-extra"), borderWidth: 2, pointRadius: 0, stepped: true },
+    { label: "Minimum due (current)", data: pad(cur, "due"), borderColor: css("--s-interest"), backgroundColor: css("--s-interest"), borderWidth: 1.5, borderDash: [5, 4], pointRadius: 0, stepped: true }];
+  const o1 = base(), o2 = base();
+  o2.plugins.tooltip.callbacks.label = c => ` ${c.dataset.label}: ${c.parsed.y == null ? "—" : usd2(c.parsed.y)}`;
+  if (c1) c1.destroy(); if (c2) c2.destroy();
+  c1 = new Chart($("c1"), { type: "line", data: { labels, datasets: ds1 }, options: o1, plugins: [vline] });
+  c2 = new Chart($("c2"), { type: "line", data: { labels: labels, datasets: ds2 }, options: o2, plugins: [vline] });
+}
+function table(r, o) {
+  let rows;
+  if (view.gran === "mo") rows = r.rows.map(x => ({ k: `${x.m} · ${label(x.m)}`, apr: x.apr.toFixed(2) + "%", pay: x.pay, lump: x.lump, interest: x.interest, principal: x.principal, bal: x.bal, ph: x.m === o.drawM + 1 && o.drawM > 0, phase: x.inDraw ? "Draw" : "Repay" }));
+  else { rows = []; for (let i = 0; i < r.rows.length; i += 12) { const g = r.rows.slice(i, i + 12), a = g[0], z = g[g.length - 1];
+    rows.push({ k: `Year ${i / 12 + 1} · ${label(a.m)}–${label(z.m)}`, apr: [...new Set(g.map(x => x.apr.toFixed(2)))].join(" → ") + "%", pay: g.reduce((t, x) => t + x.pay, 0), lump: g.reduce((t, x) => t + x.lump, 0),
+      interest: g.reduce((t, x) => t + x.interest, 0), principal: g.reduce((t, x) => t + x.principal, 0), bal: z.bal, ph: o.drawM > 0 && a.m <= o.drawM + 1 && z.m >= o.drawM + 1 && o.drawM % 12 === 0 && a.m === o.drawM + 1,
+      phase: g.every(x => x.inDraw) ? "Draw" : g.some(x => x.inDraw) ? "Draw → Repay" : "Repay" }); } }
+  const f = view.gran === "mo" ? usd2 : usd;
+  $("tbl").innerHTML = `<thead><tr><th>${view.gran === "mo" ? "Month" : "Year"}</th><th>Phase</th><th>Rate</th><th>Payments</th><th>Lump sums</th><th>Interest</th><th>Principal</th><th>Balance</th></tr></thead><tbody>` +
+    rows.map(x => `<tr${x.ph ? ' class="phase"' : ""}><td>${x.k}</td><td>${x.phase}</td><td>${x.apr}</td><td>${f(x.pay)}</td><td>${x.lump ? f(x.lump) : "—"}</td><td>${f(x.interest)}</td><td>${f(x.principal)}</td><td>${f(x.bal)}</td></tr>`).join("") +
+    `<tr class="mark"><td>Total</td><td></td><td></td><td>${usd(r.rows.reduce((t, x) => t + x.pay, 0))}</td><td>${usd(r.rows.reduce((t, x) => t + x.lump, 0))}</td><td>${usd(r.interest)}</td><td>${usd(r.rows.reduce((t, x) => t + x.principal, 0))}</td><td></td></tr></tbody>`;
+}
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", render);
+setInputs(); render();
+</script>
+</body>
+</html>
